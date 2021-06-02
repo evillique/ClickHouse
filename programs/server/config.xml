@@ -1154,4 +1154,16 @@
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->
+
+    <!-- Stop word lists-->
+    <!-- <stopword_lists>
+        <list>
+            <name>ru</name>
+            <path>ru.txt</path>
+        </list>
+        <list>
+            <name>en</name>
+            <path>en.txt</path>
+        </list>
+    </stopword_lists> -->
 </yandex>
