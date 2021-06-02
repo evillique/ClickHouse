@@ -75,6 +75,8 @@
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 
+#include <fstream>
+#include "../robin_hood.h"
 
 namespace ProfileEvents
 {
@@ -342,6 +344,8 @@ struct ContextSharedPart
     ext::scope_guard models_repository_guard;
 
     ext::scope_guard dictionaries_xmls;
+
+    mutable std::optional<robin_hood::unordered_map<String, robin_hood::unordered_set<String>>> StopWordLists;
 
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
@@ -1436,6 +1440,84 @@ void Context::loadDictionaries(const Poco::Util::AbstractConfiguration & config)
     }
     shared->dictionaries_xmls = getExternalDictionariesLoader().addConfigRepository(
         std::make_unique<ExternalLoaderXMLConfigRepository>(config, "dictionaries_config"));
+}
+
+void load(const String & path, robin_hood::unordered_set<String> & stop_words) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        throw Exception(
+            "Cannot find profile " + path + " for function isStopWord",
+            ErrorCodes::BAD_ARGUMENTS);
+            //ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+    String line, word;
+    while (getline(file, line)) {
+        for (auto i : line) {
+            if (i == '#' || i == '|') {
+                break;
+            } else if (!isspace(i)) {
+                word += i;
+            }
+        }
+        if (!word.empty()) {
+            stop_words.insert(word);
+        }
+        word.erase();
+    }
+}
+
+robin_hood::unordered_map<String, robin_hood::unordered_set<String>> Context::getStopWordImpl() 
+{
+    robin_hood::unordered_map<String, robin_hood::unordered_set<String>> res;
+    
+    String prefix = "stopword_lists";
+
+    Poco::Util::AbstractConfiguration::Keys keys;
+
+    const auto & config = getConfigRef();
+
+    if (!config.has(prefix)) {
+        throw Exception("no stopword_lists in config :(",
+            //ErrorCodes::INVALID_CONFIG_PARAMETER);
+            ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    config.keys(prefix, keys);
+
+    for (const auto & key : keys)
+    {
+        if (key == "list")
+        {
+            const auto & list_name = config.getString(prefix + "." + key + ".name", "");
+            const auto & list_path = config.getString(prefix + "." + key + ".path", "");
+
+            if (list_name.empty())
+                throw Exception("List name in config is not specified here: " + prefix + "." + key + ".name",
+                    ErrorCodes::BAD_ARGUMENTS);
+                    //ErrorCodes::INVALID_CONFIG_PARAMETER);
+            if (list_path.empty())
+                throw Exception("List path in config is not specified here: " + prefix + "." + key + ".path",
+                    ErrorCodes::BAD_ARGUMENTS);
+                    //ErrorCodes::INVALID_CONFIG_PARAMETER);
+            
+            // add list to something (?)
+            load(list_path, res[list_name]);
+        }
+        else
+            throw Exception("Unknown element in config: " + prefix + "." + key + ", must be 'list'",
+                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+    }
+    return res;
+}
+
+robin_hood::unordered_map<String, robin_hood::unordered_set<String>> & Context::getStopWordTemporary() {
+    auto lock = getLock();
+    
+    if(!shared->StopWordLists) {
+        shared->StopWordLists = getStopWordImpl();
+    }
+
+    return *shared->StopWordLists;
 }
 
 void Context::setProgressCallback(ProgressCallback callback)

@@ -30,6 +30,7 @@
 #include <optional>
 #include <thread>
 
+#include "../robin_hood.h"
 
 namespace Poco::Net { class IPAddress; }
 namespace zkutil { class ZooKeeper; }
@@ -513,6 +514,9 @@ public:
     void loadDictionaries(const Poco::Util::AbstractConfiguration & config);
 
     void setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name = "models_config");
+
+    robin_hood::unordered_map<String, robin_hood::unordered_set<String>> getStopWordImpl();
+    robin_hood::unordered_map<String, robin_hood::unordered_set<String>> & getStopWordTemporary();
 
     /// I/O formats.
     BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
