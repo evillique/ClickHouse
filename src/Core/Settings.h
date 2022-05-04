@@ -715,7 +715,17 @@ class IColumn;
     \
     M(Bool, output_format_arrow_low_cardinality_as_dictionary, false, "Enable output LowCardinality type as Dictionary Arrow type", 0) \
     \
-    M(EnumComparingMode, format_capn_proto_enum_comparising_mode, FormatSettings::EnumComparingMode::BY_VALUES, "How to map ClickHouse Enum and CapnProto Enum", 0)\
+    M(EnumComparingMode, format_capn_proto_enum_comparising_mode, FormatSettings::EnumComparingMode::BY_VALUES, "How to map ClickHouse Enum and CapnProto Enum", 0) \
+    \
+    M(Bool, use_cuda_aggregation, false, "Whether to use CUDA aggregation", 0) \
+    M(UInt64, cuda_device_number, 0, "CUDA device number (temporal)", 0) \
+    M(UInt64, cuda_host_pinned_mem_pool_size, 2147483648, "Size of pinned memory pool for cpu/gpu transfers", 0) \
+    M(UInt64, cuda_chunks_number, 2, "number of CUDA working streams per device", 0) \
+    M(UInt64, cuda_hash_table_max_size, 16384, "CUDA maximum result size (temporal)", 0) \
+    M(UInt64, cuda_hash_table_strings_buffer_max_size, 262144, "CUDA maximum total size of all strings keys in result (temporal)", 0) \
+    M(UInt64, cuda_buffer_max_strings_number, 2097152, "CUDA maximum rows number in one time processed block", 0) \
+    M(UInt64, cuda_buffer_max_size, 134217728, "CUDA maximum total size of all strings in one time processed block", 0) \
+    M(UInt64, cuda_memcpy_threads_num, 1, "CUDA maximum threads to copy block into pinned buffer", 0)
 
 // End of FORMAT_FACTORY_SETTINGS
 // Please add settings non-related to formats into the COMMON_SETTINGS above.
