@@ -9,7 +9,67 @@ add_headers_and_sources(clickhouse_functions .)
 list(REMOVE_ITEM clickhouse_functions_sources IFunction.cpp FunctionFactory.cpp FunctionHelpers.cpp)
 list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h FunctionHelpers.h)
 
+if (ENABLE_CUDA)
+    # list(APPEND clickhouse_functions_sources cuda_func.cu)
+    # set (CMAKE_CUDA_STANDARD 14)
+
+    #######################################
+    # include(FindCUDA/select_compute_arch)
+
+    # cuda_detect_installed_gpus(INSTALLED_GPU_CCS_1)
+
+    # string(STRIP "${INSTALLED_GPU_CCS_1}" INSTALLED_GPU_CCS_2)
+    # string(REPLACE " " ";" INSTALLED_GPU_CCS_3 "${INSTALLED_GPU_CCS_2}")
+    # string(REPLACE "." "" CUDA_ARCH_LIST "${INSTALLED_GPU_CCS_3}")
+    # set(CMAKE_CUDA_ARCHITECTURES 52)# ${CUDA_ARCH_LIST})
+    message("1############ ${CMAKE_CUDA_ARCHITECTURES} ${CMAKE_CXX_COMPILER}")
+    message("2############ ${CUDA_INCLUDE_DIRS}")
+    message("3############ ${CUDA_HOST_COMPILER} ${CMAKE_CUDA_COMPILER}")
+    message(STATUS "4############ CMAKE_CUDA_FLAGS: ${CMAKE_CUDA_FLAGS}")
+    # message("???? ==== ???? ${LD_LIBRARY_PATH}")
+    ########################################
+
+    # set(CUDA_HOST_COMPILER clang++-14)
+    # set(CMAKE_CUDA_COMPILER /usr/bin/clang++-14)
+
+    # set(
+    #     CUDA_NVCC_FLAGS
+    #     # ${CUDA_NVCC_FLAGS}; 
+    #     -O3 
+    #     -gencode arch=compute_52,code=sm_52
+    # )
+
+    add_library(clickhouse_functions_cuda cuda_func.cu)
+    # target_link_directories(clickhouse_functions_cuda PUBLIC /usr/local/cuda-11.6/targets/x86_64-linux/lib)
+
+
+    # get_target_property(heyheyhey2 clickhouse_functions_cuda INTERFACE_LINK_LIBRARIES)
+    # message("### heyhey mortals2: -${heyheyhey2}-")
+
+    # set_target_properties(clickhouse_functions_cuda PROPERTIES INTERFACE_LINK_LIBRARIES "")
+    # set_source_files_properties(cuda_func.cu PROPERTIES COMPILE_FLAGS "-std=c++17" INCLUDE_DIRECTORIES "")
+    # get_source_file_property(hey_id cuda_func.cu INCLUDE_DIRECTORIES)
+    # get_source_file_property(hey_ill cuda_func.cu INTERFACE_LINK_LIBRARIES)
+    # message("### heyhey mortals1: *${hey_id}* *${hey_ill}*")
+    # get_target_property(heyheyhey2 clickhouse_functions_cuda INTERFACE_LINK_LIBRARIES)
+    # message("### heyhey mortals2: ${heyheyhey2}")
+
+    # include(FindCUDA)
+    # cuda_add_library(clickhouse_functions_cuda cuda_func.cu OPTIONS -std=c++14)
+endif ()
+
 add_library(clickhouse_functions ${clickhouse_functions_sources})
+
+# if (ENABLE_CUDA)
+#     list(APPEND clickhouse_functions_sources cuda_func.cu)
+
+#     # set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} 1")
+#     # message("## CMAKE_CUDA_STANDARD:  ${CMAKE_CUDA_STANDARD}")
+#     # set (CMAKE_CUDA_STANDARD 17)
+
+#     # target_compile_options(clickhouse_functions PRIVATE "$<$<COMPILE_LANGUAGE:CUDA>:SHELL: 2>")
+#     # message("## CMAKE_CUDA_FLAGS:  ${CMAKE_CUDA_FLAGS}")
+# endif ()
 
 target_link_libraries(clickhouse_functions
     PUBLIC
@@ -49,7 +109,7 @@ option(STRIP_DEBUG_SYMBOLS_FUNCTIONS "Do not generate debugger info for ClickHou
 
 if (STRIP_DEBUG_SYMBOLS_FUNCTIONS)
     message(INFO "Not generating debugger info for ClickHouse functions")
-    target_compile_options(clickhouse_functions PRIVATE "-g0")
+    target_compile_options(clickhouse_functions PRIVATE "$<$<COMPILE_LANGUAGE:ASM,C,CXX>:-g0>")
 else()
     message(STATUS "Generating debugger info for ClickHouse functions")
 endif()
@@ -78,6 +138,10 @@ target_link_libraries(clickhouse_functions PRIVATE ch_contrib::lz4)
 
 if (ENABLE_NLP)
     target_link_libraries(clickhouse_functions PRIVATE ch_contrib::cld2)
+endif()
+
+if (ENABLE_CUDA)
+    target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_cuda)
 endif()
 
 if (TARGET ch_contrib::h3)
@@ -113,3 +177,6 @@ set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-s
 if (ENABLE_FUZZING)
     add_compile_definitions(FUZZING_MODE=1)
 endif ()
+
+# get_target_property(heyheyhey2 clickhouse_functions_cuda INTERFACE_LINK_LIBRARIES)
+# message("### heyhey mortals2: ${heyheyhey2}")

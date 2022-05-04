@@ -37,6 +37,9 @@ if (GLIBC_COMPATIBILITY)
 
     target_include_directories(glibc-compatibility PRIVATE libcxxabi ${musl_arch_include_dir})
 
+    # target_include_directories(glibc-compatibility PRIVATE
+    #      $<$<COMPILE_LANGUAGE:ASM,C,CXX>:${CMAKE_CURRENT_SOURCE_DIR}/libcxxabi ${CMAKE_CURRENT_SOURCE_DIR}/${musl_arch_include_dir}>)
+
     if (NOT USE_STATIC_LIBRARIES AND NOT USE_STATIC_LIBRARIES)
         target_compile_options(glibc-compatibility PRIVATE -fPIC)
     endif ()

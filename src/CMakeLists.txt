@@ -88,6 +88,20 @@ add_subdirectory (Coordination)
 set(dbms_headers)
 set(dbms_sources)
 
+if (ENABLE_CUDA)
+    set(dbms_cuda_headers)
+    set(dbms_cuda_sourses)
+
+    add_cuda_headers_and_sources(dbms_cuda Common/Cuda)
+    add_cuda_headers_and_sources(dbms_cuda Common/Cuda/City_Hash)
+    add_cuda_headers_and_sources(dbms_cuda Common/HashTable/Cuda)
+    add_cuda_headers_and_sources(dbms_cuda Columns/Cuda)
+    #TODO temporaly i added aggregate function to dbms_cuda
+    add_cuda_headers_and_sources(dbms_cuda AggregateFunctions/Cuda)
+    list (APPEND dbms_cuda_sources Interpreters/Cuda/CudaStringsAggregator.cu)
+    list (APPEND dbms_cuda_headers Interpreters/Cuda/CudaStringsAggregator.h)
+endif ()
+
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io IO)
@@ -286,6 +300,11 @@ if (USE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
         target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
     endif()
     set (all_modules dbms)
+    if (ENABLE_CUDA)
+        add_library(dbms_cuda STATIC ${dbms_cuda_headers} ${dbms_cuda_sources}) # OPTIONS -Xcompiler -std=c++14)
+        target_link_libraries (dbms PRIVATE dbms_cuda)
+        set (all_modules dbms dbms_cuda)
+    endif ()
 else()
     add_library (dbms SHARED ${dbms_headers} ${dbms_sources})
     target_link_libraries (dbms PUBLIC ${all_modules})
@@ -366,6 +385,10 @@ target_link_libraries(clickhouse_common_io
 if (TARGET ch_contrib::cpuid)
     target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)
 endif()
+
+# if (ENABLE_CUDA)
+#     dbms_target_link_libraries (PUBLIC dbms_cuda)
+# endif ()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
 

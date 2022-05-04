@@ -3,6 +3,7 @@ if (ARCH_AMD64)
 
     # We allow to include memcpy.h from user code for better inlining.
     target_include_directories(memcpy PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
+    # target_include_directories(memcpy PUBLIC $<$<COMPILE_LANGUAGE:ASM,C,CXX>:$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>>)
 
     target_compile_options(memcpy PRIVATE -fno-builtin-memcpy)
 endif ()

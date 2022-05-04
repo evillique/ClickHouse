@@ -1,5 +1,11 @@
 cmake_minimum_required(VERSION 3.14)
 
+set(CMAKE_THREAD_LIBS_INIT "-lpthread")
+set(CMAKE_HAVE_THREADS_LIBRARY 1)
+set(CMAKE_USE_WIN32_THREADS_INIT 0)
+set(CMAKE_USE_PTHREADS_INIT 1)
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+
 foreach(policy
         CMP0023
         CMP0048 # CMake 3.0
@@ -40,6 +46,26 @@ else()
 endif()
 
 enable_language(C CXX ASM)
+
+if (ENABLE_CUDA)
+    # SET(CMAKE_CUDA_HOST_COMPILER "${CMAKE_CXX_COMPILER}")
+    # set(CMAKE_CUDA_COMPILER clang++-14)
+    # ======
+    set(CUDA_HOST_COMPILER clang++-14)
+    set(CMAKE_CUDA_COMPILER /usr/bin/clang++-14)
+    enable_language(CUDA)
+    set(CUDA_HOST_COMPILER clang++-13)
+    set(CMAKE_CUDA_COMPILER /usr/bin/clang++-13)
+    # ======
+    # find_package(CUDA REQUIRED)
+    # include_directories(${CUDA_INCLUDE_DIRS})
+    # message("====================${CUDA_LIBRARIES} ${CUDA_INCLUDE_DIRS}")
+    # set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -D_GLIBCXX_USE_CXX11_ABI=0")
+    set (CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --no-cuda-version-check -v")
+    link_directories(/usr/local/cuda-11.6/targets/x86_64-linux/lib)
+    set (CMAKE_CUDA_STANDARD 17)
+    set (CMAKE_CUDA_ARCHITECTURES 52)
+endif ()
 
 include (cmake/arch.cmake)
 include (cmake/target.cmake)
@@ -450,13 +476,18 @@ link_libraries(global-group)
 if (WERROR)
     # Don't pollute CMAKE_CXX_FLAGS with -Werror as it will break some CMake checks.
     # Instead, adopt modern cmake usage requirement.
-    target_compile_options(global-group INTERFACE "-Werror")
+    # target_compile_options(global-group INTERFACE "-Werror")
+    target_compile_options(global-group INTERFACE "$<$<COMPILE_LANGUAGE:ASM,C,CXX>:-Werror>")
 endif ()
 
 # Make this extra-checks for correct library dependencies.
 if (OS_LINUX AND NOT SANITIZE)
     target_link_options(global-group INTERFACE "-Wl,--no-undefined")
 endif ()
+
+# if (ENABLE_CUDA)
+#     include_directories(${CUDA_INCLUDE_DIRS})
+# endif ()
 
 ######################################
 ### Add targets below this comment ###
