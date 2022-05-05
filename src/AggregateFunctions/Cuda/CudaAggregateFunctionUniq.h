@@ -39,8 +39,8 @@ class CudaAggregateFunctionUniq final : public ICudaAggregateFunction
     typedef ICudaAggregateFunction::CudaSizeType        CudaSizeType;
 public:
     size_t  cudaSizeOfData() const override;
-    void    cudaAddBulk(CudaAggregateDataPtr places, const CudaColumnString *str_column,
-        CudaSizeType elements_num, CudaSizeType *res_buckets, cudaStream_t stream = 0) const override;
+    void    cudaAddBulk(CudaAggregateDataPtr places, CudaColumnStringPtr str_column,
+        CudaSizeType elements_num, CudaSizeType *res_buckets, char *tmp_buf, cudaStream_t stream = 0) const override;
 
     virtual ~CudaAggregateFunctionUniq() override {}
 private:

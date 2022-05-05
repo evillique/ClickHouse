@@ -3,13 +3,21 @@
 #include <cstddef>
 #include <mutex>
 
-#include <ext/singleton.h>
+// #include <ext/singleton.h>
 
 #include <Common/Cuda/SinglyLinkedList.h>
 #include <Common/Cuda/CudaSafeCall.h>
 
-class CudaHostPinnedMemPool final : public ext::singleton<CudaHostPinnedMemPool>
+class CudaHostPinnedMemPool //final : public ext::singleton<CudaHostPinnedMemPool>
 {
+public:
+    static CudaHostPinnedMemPool & instance()
+    {
+        /// C++11 has thread safe statics. GCC and Clang have thread safe statics by default even before C++11.
+        static CudaHostPinnedMemPool instance;
+        return instance;
+    }
+
 private:
     struct FreeHeader
     {

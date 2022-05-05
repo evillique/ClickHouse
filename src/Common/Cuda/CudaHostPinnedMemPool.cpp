@@ -33,7 +33,7 @@ void CudaHostPinnedMemPool::init(std::size_t totalSize)
     }
     m_totalSize = totalSize;
     m_used = 0;
-    CUDA_SAFE_CALL(cudaMallocHost((void**)&m_start_ptr, m_totalSize));
+    CUDA_SAFE_CALL(cudaMallocHost(static_cast<void**>(&m_start_ptr), m_totalSize));
     //m_start_ptr = malloc(m_totalSize);
 
     this->reset();
@@ -52,7 +52,7 @@ void* CudaHostPinnedMemPool::alloc(std::size_t size, std::size_t alignment)
     std::unique_lock<std::mutex> lck(mtx);
 
     const std::size_t allocationHeaderSize = sizeof(CudaHostPinnedMemPool::AllocationHeader);
-    const std::size_t freeHeaderSize = sizeof(CudaHostPinnedMemPool::FreeHeader);
+    // const std::size_t freeHeaderSize = sizeof(CudaHostPinnedMemPool::FreeHeader);
     size = std::max(size, sizeof(Node));
     size = ((size/16)+1)*16;
     alignment = std::max(alignment, size_t(16));
@@ -77,26 +77,26 @@ void* CudaHostPinnedMemPool::alloc(std::size_t size, std::size_t alignment)
     if (rest > 0)
     {
         // We have to split the block into the data block and a free block of size 'rest'
-        Node * newFreeNode = (Node *)((std::size_t) affectedNode + requiredSize);
+        Node * newFreeNode = reinterpret_cast<Node *>(reinterpret_cast<std::size_t>(affectedNode) + requiredSize);
         newFreeNode->data.blockSize = rest;
         m_freeList.insert(affectedNode, newFreeNode);
     }
     m_freeList.remove(previousNode, affectedNode);
 
     // Setup data block
-    const std::size_t headerAddress = (std::size_t) affectedNode + alignmentPadding;
+    const std::size_t headerAddress = reinterpret_cast<std::size_t>(affectedNode) + alignmentPadding;
     const std::size_t dataAddress = headerAddress + allocationHeaderSize;
-    ((CudaHostPinnedMemPool::AllocationHeader *) headerAddress)->blockSize = requiredSize;
-    ((CudaHostPinnedMemPool::AllocationHeader *) headerAddress)->padding = alignmentPadding;
+    (reinterpret_cast<CudaHostPinnedMemPool::AllocationHeader *>(headerAddress))->blockSize = requiredSize;
+    (reinterpret_cast<CudaHostPinnedMemPool::AllocationHeader *>(headerAddress))->padding = alignmentPadding;
 
     m_used += requiredSize;
     m_peak = std::max(m_peak, m_used);
 
 #ifdef _DEBUG
-    std::cout << "A" << "\t@H " << (void*) headerAddress << "\tD@ " <<(void*) dataAddress << "\tS " << ((CudaHostPinnedMemPool::AllocationHeader *) headerAddress)->blockSize <<  "\tAP " << alignmentPadding << "\tP " << padding << "\tM " << m_used << "\tR " << rest << std::endl;
+    std::cout << "A" << "\t@H " << static_cast<void*> headerAddress << "\tD@ " <<static_cast<void*> dataAddress << "\tS " << ((CudaHostPinnedMemPool::AllocationHeader *) headerAddress)->blockSize <<  "\tAP " << alignmentPadding << "\tP " << padding << "\tM " << m_used << "\tR " << rest << std::endl;
 #endif
 
-    return (void*) dataAddress;
+    return reinterpret_cast<void*>(dataAddress);
 }
 
 void CudaHostPinnedMemPool::find(std::size_t size, std::size_t alignment, std::size_t& padding, Node *& previousNode, Node *& foundNode)
@@ -107,7 +107,7 @@ void CudaHostPinnedMemPool::find(std::size_t size, std::size_t alignment, std::s
 
     while (it != nullptr)
     {
-        padding = CudaHostPinnedMemPoolUtils::CalculatePaddingWithHeader((std::size_t)it, alignment, sizeof (CudaHostPinnedMemPool::AllocationHeader));
+        padding = CudaHostPinnedMemPoolUtils::CalculatePaddingWithHeader(reinterpret_cast<std::size_t>(it), alignment, sizeof(CudaHostPinnedMemPool::AllocationHeader));
         const std::size_t requiredSpace = size + padding;
         if (it->data.blockSize >= requiredSpace)
         {
@@ -125,11 +125,11 @@ void CudaHostPinnedMemPool::free(void* ptr)
     std::unique_lock<std::mutex> lck(mtx);
 
     // Insert it in a sorted position by the address number
-    const std::size_t currentAddress = (std::size_t) ptr;
+    const std::size_t currentAddress = reinterpret_cast<std::size_t>(ptr);
     const std::size_t headerAddress = currentAddress - sizeof (CudaHostPinnedMemPool::AllocationHeader);
-    const CudaHostPinnedMemPool::AllocationHeader * allocationHeader{ (CudaHostPinnedMemPool::AllocationHeader *) headerAddress};
+    const CudaHostPinnedMemPool::AllocationHeader * allocationHeader{reinterpret_cast<CudaHostPinnedMemPool::AllocationHeader *>(headerAddress)};
 
-    Node * freeNode = (Node *) (headerAddress);
+    Node * freeNode = reinterpret_cast<Node *>(headerAddress);
     freeNode->data.blockSize = allocationHeader->blockSize + allocationHeader->padding;
     freeNode->next = nullptr;
 
@@ -178,7 +178,7 @@ void *CudaHostPinnedMemPool::realloc(void * buf, size_t old_size, size_t new_siz
 void CudaHostPinnedMemPool::coalescence(Node* previousNode, Node * freeNode)
 {
     if (freeNode->next != nullptr &&
-            (std::size_t) freeNode + freeNode->data.blockSize == (std::size_t) freeNode->next)
+            reinterpret_cast<std::size_t>(freeNode) + freeNode->data.blockSize == reinterpret_cast<std::size_t>(freeNode->next))
     {
         freeNode->data.blockSize += freeNode->next->data.blockSize;
         m_freeList.remove(freeNode, freeNode->next);
@@ -188,7 +188,7 @@ void CudaHostPinnedMemPool::coalescence(Node* previousNode, Node * freeNode)
     }
 
     if (previousNode != nullptr &&
-            (std::size_t) previousNode + previousNode->data.blockSize == (std::size_t) freeNode)
+            reinterpret_cast<std::size_t>(previousNode) + previousNode->data.blockSize == reinterpret_cast<std::size_t>(freeNode))
     {
         previousNode->data.blockSize += freeNode->data.blockSize;
         m_freeList.remove(previousNode, freeNode);
@@ -202,7 +202,7 @@ void CudaHostPinnedMemPool::reset()
 {
     m_used = 0;
     m_peak = 0;
-    Node * firstNode = (Node *) m_start_ptr;
+    Node * firstNode = reinterpret_cast<Node *>(m_start_ptr);
     firstNode->data.blockSize = m_totalSize;
     firstNode->next = nullptr;
     m_freeList.head = nullptr;
