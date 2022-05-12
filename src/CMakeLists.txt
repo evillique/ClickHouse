@@ -98,6 +98,12 @@ if (ENABLE_CUDA)
     add_cuda_headers_and_sources(dbms_cuda Columns/Cuda)
     #TODO temporaly i added aggregate function to dbms_cuda
     add_cuda_headers_and_sources(dbms_cuda AggregateFunctions/Cuda)
+
+    add_cuda_headers_and_sources(dbms_cuda Processors/Transforms/Cuda)
+    add_cuda_headers_and_sources(dbms_cuda Processors/QueryPlan/Cuda)
+
+    # add_cuda_headers_and_sources(dbms_cuda AggregateFunctions/Cuda)
+
     list (APPEND dbms_cuda_sources Interpreters/Cuda/CudaStringsAggregator.cu)
     list (APPEND dbms_cuda_headers Interpreters/Cuda/CudaStringsAggregator.h)
 endif ()
@@ -336,6 +342,9 @@ endmacro ()
 
 dbms_target_include_directories (PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 target_include_directories (clickhouse_common_io PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
+if (ENABLE_CUDA)
+    target_include_directories(clickhouse_common_io SYSTEM PUBLIC "/usr/local/cuda-11.6/include")
+endif ()
 
 if (TARGET ch_contrib::llvm)
     dbms_target_link_libraries (PUBLIC ch_contrib::llvm)

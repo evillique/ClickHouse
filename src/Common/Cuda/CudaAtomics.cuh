@@ -3,7 +3,7 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 
-#include <Core/Cuda/Types.h>
+#include <base/types.h>
 
 // /// This simply taken from cuda programming guide
 // #ifdef __CUDA_ARCH__

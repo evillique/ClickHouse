@@ -1,10 +1,13 @@
-#include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/Cuda/CudaAggregatingTransform.h>
 
 #include <Formats/NativeReader.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Core/ProtocolDefines.h>
+
+#include <base/logger_useful.h>
+#include <Common/StackTrace.h>
 
 namespace ProfileEvents
 {
@@ -23,6 +26,7 @@ namespace ErrorCodes
 /// Adds additional info about aggregation.
 Chunk convertToChunk(const Block & block)
 {
+    LOG_FATAL(&Poco::Logger::root(), "# {}:{} - convertToChunk(1)", __FILE__, __LINE__);
     auto info = std::make_shared<AggregatedChunkInfo>();
     info->bucket_num = block.info.bucket_num;
     info->is_overflows = block.info.is_overflows;
@@ -162,6 +166,7 @@ public:
 
     void work() override
     {
+        LOG_FATAL(&Poco::Logger::root(), "# {}:{} - {}::work(1)", __FILE__, __LINE__, getName());
         if (data->empty())
         {
             finished = true;
@@ -202,6 +207,7 @@ public:
 
     IProcessor::Status prepare() override
     {
+        LOG_FATAL(&Poco::Logger::root(), "# {}:{} - {}::prepare(1)", __FILE__, __LINE__, getName());
         auto & output = outputs.front();
 
         if (finished && !has_input)
@@ -245,6 +251,7 @@ public:
 private:
     IProcessor::Status preparePushToOutput()
     {
+        LOG_FATAL(&Poco::Logger::root(), "# {}:{} - {}::preparePushToOutput(1)", __FILE__, __LINE__, getName());
         auto & output = outputs.front();
         output.push(std::move(current_chunk));
         has_input = false;
@@ -392,13 +399,13 @@ private:
     }
 };
 
-AggregatingTransform::AggregatingTransform(Block header, AggregatingTransformParamsPtr params_)
-    : AggregatingTransform(std::move(header), std::move(params_)
+CudaAggregatingTransform::CudaAggregatingTransform(Block header, AggregatingTransformParamsPtr params_)
+    : CudaAggregatingTransform(std::move(header), std::move(params_)
     , std::make_unique<ManyAggregatedData>(1), 0, 1, 1)
 {
 }
 
-AggregatingTransform::AggregatingTransform(
+CudaAggregatingTransform::CudaAggregatingTransform(
     Block header,
     AggregatingTransformParamsPtr params_,
     ManyAggregatedDataPtr many_data_,
@@ -416,9 +423,9 @@ AggregatingTransform::AggregatingTransform(
 {
 }
 
-AggregatingTransform::~AggregatingTransform() = default;
+CudaAggregatingTransform::~CudaAggregatingTransform() = default;
 
-IProcessor::Status AggregatingTransform::prepare()
+IProcessor::Status CudaAggregatingTransform::prepare()
 {
     /// There are one or two input ports.
     /// The first one is used at aggregation step, the second one - while reading merged data from ConvertingAggregated
@@ -497,7 +504,7 @@ IProcessor::Status AggregatingTransform::prepare()
     return Status::Ready;
 }
 
-void AggregatingTransform::work()
+void CudaAggregatingTransform::work()
 {
     LOG_FATAL(&Poco::Logger::root(), "# {}:{} - work(1)", __FILE__, __LINE__);
     if (is_consume_finished)
@@ -509,7 +516,7 @@ void AggregatingTransform::work()
     }
 }
 
-Processors AggregatingTransform::expandPipeline()
+Processors CudaAggregatingTransform::expandPipeline()
 {
     auto & out = processors.back()->getOutputs().front();
     inputs.emplace_back(out.getHeader(), this);
@@ -518,7 +525,7 @@ Processors AggregatingTransform::expandPipeline()
     return std::move(processors);
 }
 
-void AggregatingTransform::consume(Chunk chunk)
+void CudaAggregatingTransform::consume(Chunk chunk)
 {
     LOG_FATAL(&Poco::Logger::root(), "# {}:{} - work(1)", __FILE__, __LINE__);
     const UInt64 num_rows = chunk.getNumRows();
@@ -549,7 +556,7 @@ void AggregatingTransform::consume(Chunk chunk)
     }
 }
 
-void AggregatingTransform::initGenerate()
+void CudaAggregatingTransform::initGenerate()
 {
     if (is_generate_initialized)
         return;

@@ -3,7 +3,7 @@
 #include <memory>
 #include <vector>
 
-#include <Core/Cuda/Types.h>
+#include <base/types.h>
 #include <Common/Cuda/CudaHostPinnedArray.h>
 
 namespace DB

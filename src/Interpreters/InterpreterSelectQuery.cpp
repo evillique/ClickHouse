@@ -35,6 +35,9 @@
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 
 #include <QueryPipeline/Pipe.h>
+#if USE_CUDA
+    #include <Processors/QueryPlan/Cuda/CudaAggregatingStep.h>
+#endif
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -2139,17 +2142,34 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
     bool storage_has_evenly_distributed_read = storage && storage->hasEvenlyDistributedRead();
 
-    auto aggregating_step = std::make_unique<AggregatingStep>(
-        query_plan.getCurrentDataStream(),
-        params,
-        final,
-        settings.max_block_size,
-        settings.aggregation_in_order_max_block_bytes,
-        merge_threads,
-        temporary_data_merge_threads,
-        storage_has_evenly_distributed_read,
-        std::move(group_by_info),
-        std::move(group_by_sort_description));
+    QueryPlanStepPtr aggregating_step;
+
+#if USE_CUDA
+    if (settings.use_cuda_aggregation)
+        aggregating_step = std::make_unique<CudaAggregatingStep>(
+            query_plan.getCurrentDataStream(),
+            params,
+            final,
+            settings.max_block_size,
+            settings.aggregation_in_order_max_block_bytes,
+            merge_threads,
+            temporary_data_merge_threads,
+            storage_has_evenly_distributed_read,
+            std::move(group_by_info),
+            std::move(group_by_sort_description));
+#endif
+    if (!aggregating_step)
+        aggregating_step = std::make_unique<AggregatingStep>(
+            query_plan.getCurrentDataStream(),
+            params,
+            final,
+            settings.max_block_size,
+            settings.aggregation_in_order_max_block_bytes,
+            merge_threads,
+            temporary_data_merge_threads,
+            storage_has_evenly_distributed_read,
+            std::move(group_by_info),
+            std::move(group_by_sort_description));
 
     query_plan.addStep(std::move(aggregating_step));
 }

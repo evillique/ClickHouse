@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Cuda/Types.h>
+#include <base/types.h>
 #include <Common/Cuda/CudaArray.h>
 
 #include <Columns/Cuda/CudaColumnString.h>

@@ -3,7 +3,7 @@
 #include <stdexcept>
 #include <cmath>
 
-#include <Core/Cuda/Types.h>
+#include <base/types.h>
 #include <Common/Cuda/CudaIntHash32.h>
 #include <Common/Cuda/CudaAtomics.cuh>
 #include <Common/Cuda/CudaHyperLogLogBiasEstimator.h>

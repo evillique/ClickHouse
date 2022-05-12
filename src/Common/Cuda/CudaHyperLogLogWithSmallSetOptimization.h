@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Cuda/Types.h>
+#include <base/types.h>
 #include <Common/Cuda/CudaIntHash32.h>
 #include <Common/Cuda/CudaSmallSet.h>
 #include <Common/Cuda/CudaHyperLogLogCounter.h>

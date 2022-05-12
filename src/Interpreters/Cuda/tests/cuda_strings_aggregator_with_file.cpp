@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <chrono>
 
-#include <Core/Cuda/Types.h>
+#include <base/types.h>
 #include <Interpreters/Cuda/CudaStringsAggregator.h>
 #include <AggregateFunctions/Cuda/ICudaAggregateFunction.h>
 #include <AggregateFunctions/Cuda/createAggregateFunction.h>

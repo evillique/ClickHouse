@@ -10,7 +10,7 @@
 #include <cuda_runtime.h>
 #include <thrust/device_vector.h>
 
-#include <Core/Cuda/Types.h>
+#include <base/types.h>
 #include <Common/Cuda/CudaArray.h>
 #include <Common/Cuda/CudaHostPinnedArray.h>
 #include <Common/HashTable/Cuda/CudaStringsHashTable.h>

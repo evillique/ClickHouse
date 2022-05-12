@@ -3,7 +3,7 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 
-#include <Core/Cuda/Types.h>
+#include <base/types.h>
 
 /** This function is highly machine dependent. 
   * First, it uses explicitly type sizes. Second, it exploits little endian

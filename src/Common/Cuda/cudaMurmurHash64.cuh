@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Cuda/Types.h>
+#include <base/types.h>
 #include <Common/Cuda/cudaReadUnaligned.cuh>
 
 inline __device__ DB::UInt64    cudaMurmurHash64(const char *s, DB::UInt32 len, unsigned int seed)

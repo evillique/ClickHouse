@@ -6,7 +6,7 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 
-#include <Core/Cuda/Types.h>
+#include <base/types.h>
 
 /// TODO make some kind of simple cuda/host buffer object with once defined size and min alloc/free capabilities
 
@@ -30,11 +30,11 @@ public:
     bool        hasSpace(size_t str_num_, size_t str_buf_sz_)const;
     void        addData(size_t str_num_, size_t str_buf_sz_, 
                         const char *str_buf_, const UInt64 *offsets_, 
-                        cudaStream_t stream = 0);
+                        cudaStream_t stream = nullptr);
     void        setSize(size_t str_num_, size_t sz_);
     void        reset();
     /// it is nonblocking wrt host method
-    void        calcLengths(cudaStream_t stream = 0);
+    void        calcLengths(cudaStream_t stream = nullptr);
 
     ~CudaColumnString();
 protected:

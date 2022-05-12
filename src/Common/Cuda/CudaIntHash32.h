@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Cuda/Types.h>
+#include <base/types.h>
 
 template <DB::UInt64 salt>
 inline __device__ DB::UInt32 cudaIntHash32(DB::UInt64 key)
