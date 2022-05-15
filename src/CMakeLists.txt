@@ -101,6 +101,7 @@ if (ENABLE_CUDA)
 
     add_cuda_headers_and_sources(dbms_cuda Processors/Transforms/Cuda)
     add_cuda_headers_and_sources(dbms_cuda Processors/QueryPlan/Cuda)
+    add_cuda_headers_and_sources(dbms_cuda Interpreters/Cuda)
 
     # add_cuda_headers_and_sources(dbms_cuda AggregateFunctions/Cuda)
 

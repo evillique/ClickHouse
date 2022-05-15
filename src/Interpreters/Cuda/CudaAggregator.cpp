@@ -1,30 +1,40 @@
-#include <iomanip>
-#include <thread>
+#include <algorithm>
 #include <future>
+#include <numeric>
+#include <Poco/Util/Application.h>
 
+#include <base/sort.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
-
+#include <Common/formatReadable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnString.h>
-#include <AggregateFunctions/AggregateFunctionCount.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
-#include <DataStreams/NativeBlockOutputStream.h>
-#include <DataStreams/NullBlockInputStream.h>
-#include <DataStreams/materializeBlock.h>
+#include <Columns/ColumnSparse.h>
+#include <Formats/NativeWriter.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Interpreters/Aggregator.h>
+#include <Common/LRUCache.h>
+#include <Common/MemoryTracker.h>
+#include <Common/CurrentThread.h>
+#include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
+#include <Common/JSONBuilder.h>
+#include <AggregateFunctions/AggregateFunctionArray.h>
+#include <AggregateFunctions/AggregateFunctionState.h>
+#include <IO/Operators.h>
+#include <Interpreters/JIT/compileFunction.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Core/ProtocolDefines.h>
+
+#include <Parsers/ASTSelectQuery.h>
+
+#include <AggregateFunctions/AggregateFunctionCount.h>
 
 #include <Interpreters/Cuda/CudaAggregator.h>
-#include <Common/ClickHouseRevision.h>
-#include <Common/MemoryTracker.h>
-#include <Common/typeid_cast.h>
-#include <Common/demangle.h>
-#include <Interpreters/config_compile.h>
 
 
 namespace ProfileEvents
@@ -95,7 +105,7 @@ Block CudaAggregator::getHeader(bool final) const
 }
 
 
-CudaAggregator::CudaAggregator(const Context & context_, const Params & params_)
+CudaAggregator::CudaAggregator(ContextPtr context_, const Params & params_)
     : context(context_), params(params_)
 {
     /// Here we cut off unsupported cases
@@ -108,9 +118,9 @@ CudaAggregator::CudaAggregator(const Context & context_, const Params & params_)
     const auto & key_pos = params.keys[0];
     const auto & key_type = (params.src_header ? params.src_header : params.intermediate_header).safeGetByPosition(key_pos).type;
 
-    if (key_type->isNullable())
+    if (WhichDataType(key_type).isNullable())
         throw Exception("CudaAggregator: have no idea what is nullable key", ErrorCodes::CUDA_UNSUPPORTED_CASE);
-    if (!key_type->isString())
+    if (!WhichDataType(key_type).isString())
         throw Exception("CudaAggregator: key is not String", ErrorCodes::CUDA_UNSUPPORTED_CASE);
 
     /// Throws an exception if function CUDA version is not implemented
@@ -122,15 +132,18 @@ CudaAggregator::CudaAggregator(const Context & context_, const Params & params_)
     const auto & arg_pos = params.aggregates[0].arguments[0];
     const auto & arg_type = (params.src_header ? params.src_header : params.intermediate_header).safeGetByPosition(arg_pos).type;
 
-    if (arg_type->isNullable())
+    if (WhichDataType(arg_type).isNullable())
         throw Exception("CudaAggregator: have no idea what is nullable argument", ErrorCodes::CUDA_UNSUPPORTED_CASE);
-    if (!arg_type->isString())
+    if (!WhichDataType(arg_type).isString())
         throw Exception("CudaAggregator: argument is not String", ErrorCodes::CUDA_UNSUPPORTED_CASE);
 }
 
 
-bool CudaAggregator::executeOnBlock(const Block & block, CudaAggregatedDataVariants & result,
-    ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns)
+// bool CudaAggregator::executeOnBlock(const Block & block, CudaAggregatedDataVariants & result,
+//     ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns)
+bool CudaAggregator::executeOnBlock(Columns columns, UInt64 num_rows, CudaAggregatedDataVariants & result,
+        ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
+        bool & /*no_more_keys*/) const
 {
 
     for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -144,7 +157,7 @@ bool CudaAggregator::executeOnBlock(const Block & block, CudaAggregatedDataVaria
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
     {
-        key_columns[i] = block.safeGetByPosition(params.keys[i]).column.get();
+        key_columns[i] = columns[params.keys[i]].get();
 
         if (ColumnPtr converted = key_columns[i]->convertToFullColumnIfConst())
         {
@@ -160,7 +173,7 @@ bool CudaAggregator::executeOnBlock(const Block & block, CudaAggregatedDataVaria
     {
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
-            aggregate_columns[i][j] = block.safeGetByPosition(params.aggregates[i].arguments[j]).column.get();
+            aggregate_columns[i][j] = columns[params.aggregates[i].arguments[j]].get();
 
             if (ColumnPtr converted = aggregate_columns[i][j]->convertToFullColumnIfConst())
             {
@@ -175,8 +188,6 @@ bool CudaAggregator::executeOnBlock(const Block & block, CudaAggregatedDataVaria
         aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();*/
     }
 
-    size_t rows = block.rows();
-
     if (result.empty())
     {
         result.init(context, cuda_agg_function);
@@ -189,8 +200,8 @@ bool CudaAggregator::executeOnBlock(const Block & block, CudaAggregatedDataVaria
     ColumnString    *keys_column = const_cast<ColumnString*>(static_cast<const ColumnString*>(key_columns[0])),
                     *vals_column = const_cast<ColumnString*>(static_cast<const ColumnString*>(aggregate_columns[0][0]));
 
-    const Settings & settings = context.getSettingsRef();
-    result.strings_agg->queueData(rows,
+    // const Settings & settings = context->getSettingsRef();
+    result.strings_agg->queueData(num_rows,
         keys_column->getChars().size(), reinterpret_cast<const char*>(keys_column->getChars().data()), keys_column->getOffsets().data(),
         vals_column->getChars().size(), reinterpret_cast<const char*>(vals_column->getChars().data()), vals_column->getOffsets().data());
     result.strings_agg->waitQueueData();
@@ -198,41 +209,110 @@ bool CudaAggregator::executeOnBlock(const Block & block, CudaAggregatedDataVaria
     return true;
 }
 
+// bool CudaAggregator::executeOnBlock(const Block & block, CudaAggregatedDataVariants & result,
+//     ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns)
+// {
 
-void CudaAggregator::execute(const BlockInputStreamPtr & stream, CudaAggregatedDataVariants & result)
-{
-    //StringRefs key(params.keys_size);
-    ColumnRawPtrs key_columns(params.keys_size);
-    AggregateColumns aggregate_columns(params.aggregates_size);
+//     for (size_t i = 0; i < params.aggregates_size; ++i)
+//         aggregate_columns[i].resize(params.aggregates[i].arguments.size());
+
+//     /** Constant columns are not supported directly during aggregation.
+//       * To make them work anyway, we materialize them.
+//       */
+//     Columns materialized_columns;
+
+//     /// Remember the columns we will work with
+//     for (size_t i = 0; i < params.keys_size; ++i)
+//     {
+//         key_columns[i] = block.safeGetByPosition(params.keys[i]).column.get();
+
+//         if (ColumnPtr converted = key_columns[i]->convertToFullColumnIfConst())
+//         {
+//             materialized_columns.push_back(converted);
+//             key_columns[i] = materialized_columns.back().get();
+//         }
+//     }
+
+//     //AggregateFunctionInstructions aggregate_functions_instructions(params.aggregates_size + 1);
+//     //aggregate_functions_instructions[params.aggregates_size].that = nullptr;
+
+//     for (size_t i = 0; i < params.aggregates_size; ++i)
+//     {
+//         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
+//         {
+//             aggregate_columns[i][j] = block.safeGetByPosition(params.aggregates[i].arguments[j]).column.get();
+
+//             if (ColumnPtr converted = aggregate_columns[i][j]->convertToFullColumnIfConst())
+//             {
+//                 materialized_columns.push_back(converted);
+//                 aggregate_columns[i][j] = materialized_columns.back().get();
+//             }
+//         }
+
+//         /*aggregate_functions_instructions[i].that = aggregate_functions[i];
+//         aggregate_functions_instructions[i].func = aggregate_functions[i]->getAddressOfAddFunction();
+//         aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
+//         aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();*/
+//     }
+
+//     size_t rows = block.rows();
+
+//     if (result.empty())
+//     {
+//         result.init(context, cuda_agg_function);
+//         result.startProcessing();
+//         //result.keys_size = params.keys_size;
+//         //result.key_sizes = key_sizes;
+//     }
+
+//     /// TODO get rid of this const_cast (problems is getChars and getOffsets been nonconst methods)
+//     ColumnString    *keys_column = const_cast<ColumnString*>(static_cast<const ColumnString*>(key_columns[0])),
+//                     *vals_column = const_cast<ColumnString*>(static_cast<const ColumnString*>(aggregate_columns[0][0]));
+
+//     const Settings & settings = context->getSettingsRef();
+//     result.strings_agg->queueData(rows,
+//         keys_column->getChars().size(), reinterpret_cast<const char*>(keys_column->getChars().data()), keys_column->getOffsets().data(),
+//         vals_column->getChars().size(), reinterpret_cast<const char*>(vals_column->getChars().data()), vals_column->getOffsets().data());
+//     result.strings_agg->waitQueueData();
+
+//     return true;
+// }
 
 
-    LOG_TRACE(log, "Cuda aggregating");
+// void CudaAggregator::execute(const BlockInputStreamPtr & stream, CudaAggregatedDataVariants & result)
+// {
+//     //StringRefs key(params.keys_size);
+//     ColumnRawPtrs key_columns(params.keys_size);
+//     AggregateColumns aggregate_columns(params.aggregates_size);
 
-    Stopwatch watch;
 
-    size_t src_rows = 0;
-    size_t src_bytes = 0;
+//     LOG_TRACE(log, "Cuda aggregating");
 
-    /// Read all the data
-    while (Block block = stream->read())
-    {
-        src_rows += block.rows();
-        src_bytes += block.bytes();
+//     Stopwatch watch;
 
-        if (!executeOnBlock(block, result, key_columns, aggregate_columns))
-            break;
+//     size_t src_rows = 0;
+//     size_t src_bytes = 0;
 
-    }
+//     /// Read all the data
+//     while (Block block = stream->read())
+//     {
+//         src_rows += block.rows();
+//         src_bytes += block.bytes();
 
-    result.waitProcessed();
+//         if (!executeOnBlock(block, result, key_columns, aggregate_columns))
+//             break;
 
-    double elapsed_seconds = watch.elapsedSeconds();
-    size_t rows = result.strings_agg->getResult().size();
-    LOG_TRACE(log, std::fixed << std::setprecision(3)
-        << "Aggregated. " << src_rows << " to " << rows << " rows (from " << src_bytes / 1048576.0 << " MiB)"
-        << " in " << elapsed_seconds << " sec."
-        << " (" << src_rows / elapsed_seconds << " rows/sec., " << src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
-}
+//     }
+
+//     result.waitProcessed();
+
+//     double elapsed_seconds = watch.elapsedSeconds();
+//     size_t rows = result.strings_agg->getResult().size();
+//     LOG_TRACE(log, std::fixed << std::setprecision(3)
+//         << "Aggregated. " << src_rows << " to " << rows << " rows (from " << src_bytes / 1048576.0 << " MiB)"
+//         << " in " << elapsed_seconds << " sec."
+//         << " (" << src_rows / elapsed_seconds << " rows/sec., " << src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+// }
 
 
 void NO_INLINE CudaAggregator::convertToBlockImplFinal(
@@ -304,7 +384,7 @@ Block CudaAggregator::prepareBlockAndFill(
     /// Change the size of the columns-constants in the block.
     size_t columns = header.columns();
     for (size_t i = 0; i < columns; ++i)
-        if (res.getByPosition(i).column->isColumnConst())
+        if (isColumnConst(*(res.getByPosition(i).column)))
             res.getByPosition(i).column = res.getByPosition(i).column->cut(0, rows);
 
     return res;
@@ -313,6 +393,7 @@ Block CudaAggregator::prepareBlockAndFill(
 
 Block CudaAggregator::prepareBlockAndFillSingleLevel(CudaAggregatedDataVariants & data_variants, bool final) const
 {
+    data_variants.waitProcessed();
     size_t rows = data_variants.strings_agg->getResult().size();
 
     auto filler = [&data_variants, this](
@@ -326,45 +407,45 @@ Block CudaAggregator::prepareBlockAndFillSingleLevel(CudaAggregatedDataVariants 
 }
 
 
-BlocksList CudaAggregator::convertToBlocks(CudaAggregatedDataVariants & data_variants, bool final, size_t max_threads) const
-{
-    /// TODO unused parameters
-    max_threads = max_threads;
+// BlocksList CudaAggregator::convertToBlocks(CudaAggregatedDataVariants & data_variants, bool final, size_t max_threads) const
+// {
+//     /// TODO unused parameters
+//     max_threads = max_threads;
 
-    LOG_TRACE(log, "Converting aggregated data to blocks");
+//     LOG_TRACE(log, "Converting aggregated data to blocks");
 
-    Stopwatch watch;
+//     Stopwatch watch;
 
-    if (!final)
-        throw Exception("CudaAggregator::convertToBlocks: not final case is not supported yet ",
-            ErrorCodes::CUDA_UNSUPPORTED_CASE);
+//     if (!final)
+//         throw Exception("CudaAggregator::convertToBlocks: not final case is not supported yet ",
+//             ErrorCodes::CUDA_UNSUPPORTED_CASE);
 
-    BlocksList blocks;
+//     BlocksList blocks;
 
-    /// In what data structure is the data aggregated?
-    if (data_variants.empty())
-        return blocks;
+//     /// In what data structure is the data aggregated?
+//     if (data_variants.empty())
+//         return blocks;
 
-    blocks.emplace_back(prepareBlockAndFillSingleLevel(data_variants, final));
+//     blocks.emplace_back(prepareBlockAndFillSingleLevel(data_variants, final));
 
-    size_t rows = 0;
-    size_t bytes = 0;
+//     size_t rows = 0;
+//     size_t bytes = 0;
 
-    for (const auto & block : blocks)
-    {
-        rows += block.rows();
-        bytes += block.bytes();
-    }
+//     for (const auto & block : blocks)
+//     {
+//         rows += block.rows();
+//         bytes += block.bytes();
+//     }
 
-    double elapsed_seconds = watch.elapsedSeconds();
-    LOG_TRACE(log, std::fixed << std::setprecision(3)
-        << "Converted aggregated data to blocks. "
-        << rows << " rows, " << bytes / 1048576.0 << " MiB"
-        << " in " << elapsed_seconds << " sec."
-        << " (" << rows / elapsed_seconds << " rows/sec., " << bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+//     double elapsed_seconds = watch.elapsedSeconds();
+//     LOG_TRACE(log, std::fixed << std::setprecision(3)
+//         << "Converted aggregated data to blocks. "
+//         << rows << " rows, " << bytes / 1048576.0 << " MiB"
+//         << " in " << elapsed_seconds << " sec."
+//         << " (" << rows / elapsed_seconds << " rows/sec., " << bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
 
-    return blocks;
-}
+//     return blocks;
+// }
 
 
 }

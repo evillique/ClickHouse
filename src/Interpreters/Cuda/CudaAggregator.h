@@ -1,28 +1,47 @@
 #pragma once
 
+#include <mutex>
 #include <memory>
 #include <functional>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 #include <Common/Arena.h>
+#include <Common/HashTable/FixedHashMap.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/TwoLevelHashMap.h>
+#include <Common/HashTable/StringHashMap.h>
+#include <Common/HashTable/TwoLevelStringHashMap.h>
 
-#include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/SizeLimits.h>
+#include <Common/ThreadPool.h>
+#include <Common/ColumnsHashing.h>
+#include <Common/assert_cast.h>
+#include <Common/filesystemHelpers.h>
 
-#include <Interpreters/Context.h>
-#include <Interpreters/Aggregator.h>
-#include <Interpreters/Cuda/CudaStringsAggregator.h>
+#include <QueryPipeline/SizeLimits.h>
 
-#include <AggregateFunctions/Cuda/ICudaAggregateFunction.h>
+#include <Disks/SingleDiskVolume.h>
+
+#include <Interpreters/AggregateDescription.h>
+#include <Interpreters/AggregationCommon.h>
+#include <Interpreters/JIT/compileFunction.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnLowCardinality.h>
 
+#include <Parsers/IAST_fwd.h>
+
+#include <Interpreters/Context_fwd.h>
+
+#include <Interpreters/Context.h>
+#include <Interpreters/Aggregator.h>
+#include <Interpreters/Cuda/CudaStringsAggregator.h>
+#include <AggregateFunctions/Cuda/ICudaAggregateFunction.h>
 
 namespace DB
 {
@@ -32,8 +51,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
 }
 
-class IBlockOutputStream;
-
 struct CudaAggregatedDataVariants : private boost::noncopyable
 {
     bool                                    empty_ = true;
@@ -41,9 +58,9 @@ struct CudaAggregatedDataVariants : private boost::noncopyable
 
     bool empty() const { return empty_; }
 
-    void init(const Context & context, CudaAggregateFunctionPtr cuda_agg_function)
+    void init(ContextPtr context, CudaAggregateFunctionPtr cuda_agg_function)
     {
-        const Settings & settings = context.getSettingsRef();
+        const Settings & settings = context->getSettingsRef();
         /// There are no variants for now
         strings_agg = std::make_unique<decltype(strings_agg)::element_type>(
             settings.cuda_device_number, settings.cuda_chunks_number,
@@ -74,18 +91,22 @@ class CudaAggregator
 public:
     using Params = Aggregator::Params;
 
-    CudaAggregator(const Context & context_, const Params & params_);
+    CudaAggregator(ContextPtr context_, const Params & params_);
 
-    /// Aggregate the source. Get the result in the form of one of the data structures.
-    void execute(const BlockInputStreamPtr & stream, CudaAggregatedDataVariants & result);
+    // /// Aggregate the source. Get the result in the form of one of the data structures.
+    // void execute(const BlockInputStreamPtr & stream, CudaAggregatedDataVariants & result);
 
     using AggregateColumns = std::vector<ColumnRawPtrs>;
     using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
     using AggregateColumnsConstData = std::vector<const ColumnAggregateFunction::Container *>;
 
-    /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
-    bool executeOnBlock(const Block & block, CudaAggregatedDataVariants & result,
-        ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns);    /// Passed to not create them anew for each block
+    bool executeOnBlock(Columns columns, UInt64 num_rows, CudaAggregatedDataVariants & result,
+        ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
+        bool & no_more_keys) const;
+
+    // /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
+    // bool executeOnBlock(const Block & block, CudaAggregatedDataVariants & result,
+    //     ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns);    /// Passed to not create them anew for each block
 
     /** Convert the aggregation data structure into a block.
       * If overflow_row = true, then aggregates for rows that are not included in max_rows_to_group_by are put in the first block.
@@ -94,21 +115,22 @@ public:
       *  which can then be combined with other states (for distributed query processing).
       * If final = true, then columns with ready values are created as aggregate columns.
       */
-    BlocksList convertToBlocks(CudaAggregatedDataVariants & data_variants, bool final, size_t max_threads) const;
+    // BlocksList convertToBlocks(CudaAggregatedDataVariants & data_variants, bool final, size_t max_threads) const;
 
     /// Get data structure of the result.
     Block getHeader(bool final) const;
 
 protected:
     friend struct CudaAggregatedDataVariants;
+    friend class CudaConvertingAggregatedToChunksTransform;
 
     /// NOTE i took it form RemoteBlockInputStream; not sure if it's ok to copy wholy 'context'
-    Context context;
+    ContextPtr context;
     Params  params;
 
     CudaAggregateFunctionPtr cuda_agg_function;
 
-    Logger * log = &Logger::get("CudaAggregator");
+    Poco::Logger * log = &Poco::Logger::get("CudaAggregator");
 
 protected:
 

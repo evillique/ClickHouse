@@ -1088,6 +1088,7 @@ private:
 
     friend struct AggregatedDataVariants;
     friend class ConvertingAggregatedToChunksTransform;
+    friend class CudaConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
     friend class AggregatingInOrderTransform;
 

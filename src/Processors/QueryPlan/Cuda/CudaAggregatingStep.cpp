@@ -29,21 +29,23 @@ CudaAggregatingStep::CudaAggregatingStep(
     const DataStream & input_stream_,
     Aggregator::Params params_,
     bool final_,
-    size_t max_block_size_,
-    size_t aggregation_in_order_max_block_bytes_,
+    size_t /*max_block_size_*/,
+    size_t /*aggregation_in_order_max_block_bytes_*/,
     size_t merge_threads_,
-    size_t temporary_data_merge_threads_,
-    bool storage_has_evenly_distributed_read_,
+    size_t /*temporary_data_merge_threads_*/,
+    bool /*storage_has_evenly_distributed_read_*/,
     InputOrderInfoPtr group_by_info_,
-    SortDescription group_by_sort_description_)
+    SortDescription group_by_sort_description_,
+    ContextPtr context_)
     : ITransformingStep(input_stream_, params_.getHeader(final_), getTraits(), false)
+    , context(context_)
     , params(std::move(params_))
     , final(std::move(final_))
-    , max_block_size(max_block_size_)
-    , aggregation_in_order_max_block_bytes(aggregation_in_order_max_block_bytes_)
+    // , max_block_size(max_block_size_)
+    // , aggregation_in_order_max_block_bytes(aggregation_in_order_max_block_bytes_)
     , merge_threads(merge_threads_)
-    , temporary_data_merge_threads(temporary_data_merge_threads_)
-    , storage_has_evenly_distributed_read(storage_has_evenly_distributed_read_)
+    // , temporary_data_merge_threads(temporary_data_merge_threads_)
+    // , storage_has_evenly_distributed_read(storage_has_evenly_distributed_read_)
     , group_by_info(std::move(group_by_info_))
     , group_by_sort_description(std::move(group_by_sort_description_))
 {
@@ -51,13 +53,13 @@ CudaAggregatingStep::CudaAggregatingStep(
 
 void CudaAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    LOG_FATAL(&Poco::Logger::root(), "# {}:{} - {}::transformPipeline(1)", __FILE__, __LINE__, getName());
+    // LOG_FATAL(&Poco::Logger::root(), "# {}:{} - {}::transformPipeline(1)", __FILE__, __LINE__, getName());
     QueryPipelineProcessorsCollector collector(pipeline, this);
 
     /// Forget about current totals and extremes. They will be calculated again after aggregation if needed.
     pipeline.dropTotalsAndExtremes();
 
-    bool allow_to_use_two_level_group_by = pipeline.getNumStreams() > 1 || params.max_bytes_before_external_group_by != 0;
+    bool allow_to_use_two_level_group_by = false; //pipeline.getNumStreams() > 1 || params.max_bytes_before_external_group_by != 0;
     if (!allow_to_use_two_level_group_by)
     {
         params.group_by_two_level_threshold = 0;
@@ -68,102 +70,105 @@ void CudaAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, con
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
       */
-    auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), final);
+    auto transform_params = std::make_shared<CudaAggregatingTransformParams>(std::move(params), final, context);
 
-    if (group_by_info)
-    {
-        LOG_FATAL(&Poco::Logger::root(), "# {}:{} - {}::transformPipeline(2)", __FILE__, __LINE__, getName());
-        bool need_finish_sorting = (group_by_info->order_key_prefix_descr.size() < group_by_sort_description.size());
+    // if (group_by_info)
+    // {
+    //     // LOG_FATAL(&Poco::Logger::root(), "# {}:{} - {}::transformPipeline(2)", __FILE__, __LINE__, getName());
+    //     bool need_finish_sorting = (group_by_info->order_key_prefix_descr.size() < group_by_sort_description.size());
 
-        if (need_finish_sorting)
-        {
-            /// TOO SLOW
-        }
-        else
-        {
-            if (pipeline.getNumStreams() > 1)
-            {
-                LOG_FATAL(&Poco::Logger::root(), "# {}:{} - {}::transformPipeline(3)", __FILE__, __LINE__, getName());
-                /** The pipeline is the following:
-                 *
-                 * --> AggregatingInOrder                                                  --> MergingAggregatedBucket
-                 * --> AggregatingInOrder --> FinishAggregatingInOrder --> ResizeProcessor --> MergingAggregatedBucket
-                 * --> AggregatingInOrder                                                  --> MergingAggregatedBucket
-                 */
+    //     if (need_finish_sorting)
+    //     {
+    //         /// TOO SLOW
+    //     }
+    //     else
+    //     {
+    //         if (pipeline.getNumStreams() > 1)
+    //         {
+    //             // LOG_FATAL(&Poco::Logger::root(), "# {}:{} - {}::transformPipeline(3)", __FILE__, __LINE__, getName());
+    //             /** The pipeline is the following:
+    //              *
+    //              * --> AggregatingInOrder                                                  --> MergingAggregatedBucket
+    //              * --> AggregatingInOrder --> FinishAggregatingInOrder --> ResizeProcessor --> MergingAggregatedBucket
+    //              * --> AggregatingInOrder                                                  --> MergingAggregatedBucket
+    //              */
 
-                auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
-                size_t counter = 0;
-                pipeline.addSimpleTransform([&](const Block & header)
-                {
-                    /// We want to merge aggregated data in batches of size
-                    /// not greater than 'aggregation_in_order_max_block_bytes'.
-                    /// So, we reduce 'max_bytes' value for aggregation in 'merge_threads' times.
-                    return std::make_shared<AggregatingInOrderTransform>(
-                        header, transform_params, group_by_sort_description,
-                        max_block_size, aggregation_in_order_max_block_bytes / merge_threads,
-                        many_data, counter++);
-                });
+    //             auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
+    //             size_t counter = 0;
+    //             pipeline.addSimpleTransform([&](const Block & header)
+    //             {
+    //                 /// We want to merge aggregated data in batches of size
+    //                 /// not greater than 'aggregation_in_order_max_block_bytes'.
+    //                 /// So, we reduce 'max_bytes' value for aggregation in 'merge_threads' times.
+    //                 return std::make_shared<AggregatingInOrderTransform>(
+    //                     header, transform_params, group_by_sort_description,
+    //                     max_block_size, aggregation_in_order_max_block_bytes / merge_threads,
+    //                     many_data, counter++);
+    //             });
 
-                aggregating_in_order = collector.detachProcessors(0);
+    //             aggregating_in_order = collector.detachProcessors(0);
 
-                auto transform = std::make_shared<FinishAggregatingInOrderTransform>(
-                    pipeline.getHeader(),
-                    pipeline.getNumStreams(),
-                    transform_params,
-                    group_by_sort_description,
-                    max_block_size,
-                    aggregation_in_order_max_block_bytes);
+    //             auto transform = std::make_shared<FinishAggregatingInOrderTransform>(
+    //                 pipeline.getHeader(),
+    //                 pipeline.getNumStreams(),
+    //                 transform_params,
+    //                 group_by_sort_description,
+    //                 max_block_size,
+    //                 aggregation_in_order_max_block_bytes);
 
-                pipeline.addTransform(std::move(transform));
+    //             pipeline.addTransform(std::move(transform));
 
-                /// Do merge of aggregated data in parallel.
-                pipeline.resize(merge_threads);
+    //             /// Do merge of aggregated data in parallel.
+    //             pipeline.resize(merge_threads);
 
-                pipeline.addSimpleTransform([&](const Block &)
-                {
-                    return std::make_shared<MergingAggregatedBucketTransform>(transform_params);
-                });
+    //             pipeline.addSimpleTransform([&](const Block &)
+    //             {
+    //                 return std::make_shared<MergingAggregatedBucketTransform>(transform_params);
+    //             });
 
-                aggregating_sorted = collector.detachProcessors(1);
-            }
-            else
-            {
-                LOG_FATAL(&Poco::Logger::root(), "# {}:{} - {}::transformPipeline(4)", __FILE__, __LINE__, getName());
-                pipeline.addSimpleTransform([&](const Block & header)
-                {
-                    return std::make_shared<AggregatingInOrderTransform>(
-                        header, transform_params, group_by_sort_description,
-                        max_block_size, aggregation_in_order_max_block_bytes);
-                });
+    //             aggregating_sorted = collector.detachProcessors(1);
+    //         }
+    //         else
+    //         {
+    //             // LOG_FATAL(&Poco::Logger::root(), "# {}:{} - {}::transformPipeline(4)", __FILE__, __LINE__, getName());
+    //             pipeline.addSimpleTransform([&](const Block & header)
+    //             {
+    //                 return std::make_shared<AggregatingInOrderTransform>(
+    //                     header, transform_params, group_by_sort_description,
+    //                     max_block_size, aggregation_in_order_max_block_bytes);
+    //             });
 
-                pipeline.addSimpleTransform([&](const Block & header)
-                {
-                    return std::make_shared<FinalizeAggregatedTransform>(header, transform_params);
-                });
+    //             pipeline.addSimpleTransform([&](const Block & header)
+    //             {
+    //                 return std::make_shared<FinalizeAggregatedTransform>(header, transform_params);
+    //             });
 
-                aggregating_in_order = collector.detachProcessors(0);
-            }
+    //             aggregating_in_order = collector.detachProcessors(0);
+    //         }
 
-            finalizing = collector.detachProcessors(2);
-            return;
-        }
-    }
+    //         finalizing = collector.detachProcessors(2);
+    //         return;
+    //     }
+    // }
 
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumStreams() > 1)
     {
-        LOG_FATAL(&Poco::Logger::root(), "# {}:{} - {}::transformPipeline(5)", __FILE__, __LINE__, getName());
+        // LOG_FATAL(&Poco::Logger::root(), "# {}:{} - {}::transformPipeline(5)", __FILE__, __LINE__, getName());
         /// Add resize transform to uniformly distribute data between aggregating streams.
-        if (!storage_has_evenly_distributed_read)
-            pipeline.resize(pipeline.getNumStreams(), true, true);
+        // if (!storage_has_evenly_distributed_read)
+        //     pipeline.resize(pipeline.getNumStreams(), true, true);
+        
+        pipeline.resize(1, true, true);
+        // auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
 
-        auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
+        auto many_data = std::make_shared<CudaAggregatedDataVariants>();
 
         size_t counter = 0;
 
         pipeline.addSimpleTransform([&](const Block & header)
         {
-            return std::make_shared<AggregatingTransform>(header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
+            return std::make_shared<CudaAggregatingTransform>(header, transform_params, many_data, counter++, merge_threads, context);//, temporary_data_merge_threads);
         });
 
         pipeline.resize(1);
@@ -172,12 +177,12 @@ void CudaAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, con
     }
     else
     {
-        LOG_FATAL(&Poco::Logger::root(), "# {}:{} - {}::transformPipeline(6)", __FILE__, __LINE__, getName());
+        // LOG_FATAL(&Poco::Logger::root(), "# {}:{} - {}::transformPipeline(6)", __FILE__, __LINE__, getName());
         pipeline.resize(1);
 
         pipeline.addSimpleTransform([&](const Block & header)
         {
-            return std::make_shared<AggregatingTransform>(header, transform_params);
+            return std::make_shared<CudaAggregatingTransform>(header, transform_params, context);
         });
 
         aggregating = collector.detachProcessors(0);

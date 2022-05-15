@@ -25,6 +25,9 @@
 #include <AggregateFunctions/ThetaSketchData.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 
+#if USE_CUDA
+#   include <AggregateFunctions/Cuda/createAggregateFunction.h>
+#endif
 
 namespace DB
 {
@@ -256,6 +259,16 @@ public:
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
+
+#if USE_CUDA
+    const CudaAggregateFunctionPtr  createCudaFunction() const override
+    {
+        /// TODO check data type and uniq type
+        //using CudaFunction_t = CudaAggregateFunctionUniq<String, CudaAggregateFunctionUniqHLL12Data>;
+        //return std::make_shared<CudaFunction_t>();
+        return createCudaAggregateFunctionUniq();
+    }
+#endif
 };
 
 

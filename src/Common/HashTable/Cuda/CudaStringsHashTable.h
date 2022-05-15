@@ -23,16 +23,16 @@ public:
     typedef char*           Pointer;
 
     CudaStringsHashTable(SizeType buckets_num_, SizeType str_buf_max_sz_/*, SizeType add_max_str_num_*/);
-    void        erase(cudaStream_t stream = 0);
+    void        erase(cudaStream_t stream = nullptr);
     void        addData(SizeType str_num, char *buf, SizeType *offsets, SizeType *lens,
-                    SizeType *res_buckets, cudaStream_t stream = 0);
+                    SizeType *res_buckets, cudaStream_t stream = nullptr);
     SizeType    getBucketsNum()const { return buckets_num; }
     SizeType    getStrBufSz()const { return str_buf_sz; }
     char        *getStrBuf()const { return str_buf->getData(); }
     SizeType    *getLens()const { return lens->getData(); }
     SizeType    *getOffsets()const { return offsets->getData(); }
-    void        calcOffsets(cudaStream_t stream = 0);
-    void        mergeToOtherTable(CudaStringsHashTablePtr table, SizeType *res_buckets, cudaStream_t stream = 0);
+    void        calcOffsets(cudaStream_t stream = nullptr);
+    void        mergeToOtherTable(CudaStringsHashTablePtr table, SizeType *res_buckets, cudaStream_t stream = nullptr);
 private:
     SizeType                            buckets_num, str_buf_sz, str_buf_max_sz;
     CudaArrayPtr<HashType>              hashes;

@@ -188,7 +188,7 @@ public:
 
     Processors expandPipeline() override
     {
-        LOG_FATAL(&Poco::Logger::root(), "# {}:{} - {}::expandPipeline(1)", __FILE__, __LINE__, getName());
+        // LOG_FATAL(&Poco::Logger::root(), "# {}:{} - {}::expandPipeline(1)", __FILE__, __LINE__, getName());
         for (auto & source : processors)
         {
             auto & out = source->getOutputs().front();
@@ -261,7 +261,7 @@ private:
     /// Read all sources and try to push current bucket.
     IProcessor::Status prepareTwoLevel()
     {
-        LOG_FATAL(&Poco::Logger::root(), "# {}:{} - prepareTwoLevel(1)", __FILE__, __LINE__);
+        // LOG_FATAL(&Poco::Logger::root(), "# {}:{} - prepareTwoLevel(1)", __FILE__, __LINE__);
         auto & output = outputs.front();
 
         for (auto & input : inputs)
@@ -313,7 +313,7 @@ private:
 
     void setCurrentChunk(Chunk chunk)
     {
-        LOG_FATAL(&Poco::Logger::root(), "# {}:{} - prepareTwoLevel(1)", __FILE__, __LINE__);
+        // LOG_FATAL(&Poco::Logger::root(), "# {}:{} - prepareTwoLevel(1)", __FILE__, __LINE__);
         if (has_input)
             throw Exception("Current chunk was already set in "
                             "ConvertingAggregatedToChunksTransform.", ErrorCodes::LOGICAL_ERROR);
@@ -324,7 +324,7 @@ private:
 
     void initialize()
     {
-        LOG_FATAL(&Poco::Logger::root(), "# {}:{} - initialize(1)", __FILE__, __LINE__);
+        // LOG_FATAL(&Poco::Logger::root(), "# {}:{} - initialize(1)", __FILE__, __LINE__);
         is_initialized = true;
 
         AggregatedDataVariantsPtr & first = data->at(0);
@@ -349,7 +349,7 @@ private:
 
     void mergeSingleLevel()
     {
-        LOG_FATAL(&Poco::Logger::root(), "# {}:{} - mergeSingleLevel(1)", __FILE__, __LINE__);
+        // LOG_FATAL(&Poco::Logger::root(), "# {}:{} - mergeSingleLevel(1)", __FILE__, __LINE__);
         AggregatedDataVariantsPtr & first = data->at(0);
 
         if (current_bucket_num > 0 || first->type == AggregatedDataVariants::Type::without_key)
@@ -377,7 +377,7 @@ private:
 
     void createSources()
     {
-        LOG_FATAL(&Poco::Logger::root(), "# {}:{} - createSources(1)", __FILE__, __LINE__);
+        // LOG_FATAL(&Poco::Logger::root(), "# {}:{} - createSources(1)", __FILE__, __LINE__);
         AggregatedDataVariantsPtr & first = data->at(0);
         shared_data = std::make_shared<ConvertingAggregatedToChunksSource::SharedData>();
 
@@ -430,14 +430,14 @@ IProcessor::Status AggregatingTransform::prepare()
     /// Check can output.
     if (output.isFinished())
     {
-        LOG_FATAL(&Poco::Logger::root(), "# {}:{} - prepare() - {}", __FILE__, __LINE__, "Status::Finished");
+        // LOG_FATAL(&Poco::Logger::root(), "# {}:{} - prepare() - {}", __FILE__, __LINE__, "Status::Finished");
         input.close();
         return Status::Finished;
     }
 
     if (!output.canPush())
     {
-        LOG_FATAL(&Poco::Logger::root(), "# {}:{} - prepare() - {}", __FILE__, __LINE__, "Status::PortFull");
+        // LOG_FATAL(&Poco::Logger::root(), "# {}:{} - prepare() - {}", __FILE__, __LINE__, "Status::PortFull");
         input.setNotNeeded();
         return Status::PortFull;
     }
@@ -445,7 +445,7 @@ IProcessor::Status AggregatingTransform::prepare()
     /// Finish data processing, prepare to generating.
     if (is_consume_finished && !is_generate_initialized)
     {
-        LOG_FATAL(&Poco::Logger::root(), "# {}:{} - prepare() - {}", __FILE__, __LINE__, "Status::Ready");
+        // LOG_FATAL(&Poco::Logger::root(), "# {}:{} - prepare() - {}", __FILE__, __LINE__, "Status::Ready");
         /// Close input port in case max_rows_to_group_by was reached but not all data was read.
         inputs.front().close();
 
@@ -499,7 +499,7 @@ IProcessor::Status AggregatingTransform::prepare()
 
 void AggregatingTransform::work()
 {
-    LOG_FATAL(&Poco::Logger::root(), "# {}:{} - work(1)", __FILE__, __LINE__);
+    // LOG_FATAL(&Poco::Logger::root(), "# {}:{} - work(1)", __FILE__, __LINE__);
     if (is_consume_finished)
         initGenerate();
     else
@@ -520,7 +520,7 @@ Processors AggregatingTransform::expandPipeline()
 
 void AggregatingTransform::consume(Chunk chunk)
 {
-    LOG_FATAL(&Poco::Logger::root(), "# {}:{} - work(1)", __FILE__, __LINE__);
+    // LOG_FATAL(&Poco::Logger::root(), "# {}:{} - consume(1)", __FILE__, __LINE__);
     const UInt64 num_rows = chunk.getNumRows();
 
     if (num_rows == 0 && params->params.empty_result_for_aggregation_by_empty_set)

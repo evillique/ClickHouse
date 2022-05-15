@@ -2,6 +2,8 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 
+#include <base/logger_useful.h>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -18,6 +20,7 @@ MergingAggregatedTransform::MergingAggregatedTransform(
 
 void MergingAggregatedTransform::consume(Chunk chunk)
 {
+    LOG_FATAL(&Poco::Logger::root(), "# {}:{} - {}::consume(1)", __FILE__, __LINE__, getName());
     if (!consume_started)
     {
         consume_started = true;
@@ -63,6 +66,7 @@ void MergingAggregatedTransform::consume(Chunk chunk)
 
 Chunk MergingAggregatedTransform::generate()
 {
+    LOG_FATAL(&Poco::Logger::root(), "# {}:{} - {}::generate(1)", __FILE__, __LINE__, getName());
     if (!generate_started)
     {
         generate_started = true;

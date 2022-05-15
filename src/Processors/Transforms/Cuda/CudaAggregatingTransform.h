@@ -1,36 +1,36 @@
 #pragma once
 #include <Processors/IAccumulatingTransform.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/Cuda/CudaAggregator.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Common/Stopwatch.h>
 
+#include <Interpreters/Context_fwd.h>
+
 namespace DB
 {
 
-class AggregatedArenasChunkInfo : public ChunkInfo
-{
-public:
-    Arenas arenas;
-    explicit AggregatedArenasChunkInfo(Arenas arenas_)
-        : arenas(std::move(arenas_))
-    {}
-};
+// class AggregatedArenasChunkInfo : public ChunkInfo
+// {
+// public:
+//     Arenas arenas;
+//     explicit AggregatedArenasChunkInfo(Arenas arenas_)
+//         : arenas(std::move(arenas_))
+//     {}
+// };
 
-class AggregatedChunkInfo : public ChunkInfo
-{
-public:
-    bool is_overflows = false;
-    Int32 bucket_num = -1;
-};
+// class AggregatedChunkInfo : public ChunkInfo
+// {
+// public:
+//     bool is_overflows = false;
+//     Int32 bucket_num = -1;
+// };
 
-using AggregatorList = std::list<Aggregator>;
-using AggregatorListPtr = std::shared_ptr<AggregatorList>;
+using CudaAggregatorList = std::list<CudaAggregator>;
+using CudaAggregatorListPtr = std::shared_ptr<CudaAggregatorList>;
 
-using AggregatorList = std::list<Aggregator>;
-using AggregatorListPtr = std::shared_ptr<AggregatorList>;
-
-struct AggregatingTransformParams
+struct CudaAggregatingTransformParams
 {
     Aggregator::Params params;
 
@@ -39,49 +39,51 @@ struct AggregatingTransformParams
     /// (See comments in AggregatedDataVariants). However, this pointer might not be valid because
     /// we can have two different aggregators at the same time due to mixed pipeline of aggregate
     /// projections, and one of them might gets destroyed before used.
-    AggregatorListPtr aggregator_list_ptr;
-    Aggregator & aggregator;
+
+    /// evillique: Probably get rid of this
+    CudaAggregatorListPtr aggregator_list_ptr;
+    CudaAggregator & aggregator;
     bool final;
     bool only_merge = false;
 
-    AggregatingTransformParams(const Aggregator::Params & params_, bool final_)
+    CudaAggregatingTransformParams(const Aggregator::Params & params_, bool final_, ContextPtr context_)
         : params(params_)
-        , aggregator_list_ptr(std::make_shared<AggregatorList>())
-        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), params))
+        , aggregator_list_ptr(std::make_shared<CudaAggregatorList>())
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), context_, params))
         , final(final_)
     {
     }
 
-    AggregatingTransformParams(const Aggregator::Params & params_, const AggregatorListPtr & aggregator_list_ptr_, bool final_)
-        : params(params_)
-        , aggregator_list_ptr(aggregator_list_ptr_)
-        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), params))
-        , final(final_)
-    {
-    }
+    // CudaAggregatingTransformParams(const Aggregator::Params & params_, const AggregatorListPtr & aggregator_list_ptr_, bool final_)
+    //     : params(Aggregator(params_)
+    //     , aggregator_list_ptr(aggregator_list_ptr_)
+    //     , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), params))
+    //     , final(final_)
+    // {
+    // }
 
     Block getHeader() const { return aggregator.getHeader(final); }
 
     Block getCustomHeader(bool final_) const { return aggregator.getHeader(final_); }
 };
 
-struct ManyAggregatedData
-{
-    ManyAggregatedDataVariants variants;
-    std::vector<std::unique_ptr<std::mutex>> mutexes;
-    std::atomic<UInt32> num_finished = 0;
+struct ManyAggregatedData;
+// {
+//     ManyAggregatedDataVariants variants;
+//     std::vector<std::unique_ptr<std::mutex>> mutexes;
+//     std::atomic<UInt32> num_finished = 0;
 
-    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads), mutexes(num_threads)
-    {
-        for (auto & elem : variants)
-            elem = std::make_shared<AggregatedDataVariants>();
+//     explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads), mutexes(num_threads)
+//     {
+//         for (auto & elem : variants)
+//             elem = std::make_shared<AggregatedDataVariants>();
 
-        for (auto & mut : mutexes)
-            mut = std::make_unique<std::mutex>();
-    }
-};
+//         for (auto & mut : mutexes)
+//             mut = std::make_unique<std::mutex>();
+//     }
+// };
 
-using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
+using CudaAggregatingTransformParamsPtr = std::shared_ptr<CudaAggregatingTransformParams>;
 using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 
 /** Aggregates the stream of blocks using the specified key columns and aggregate functions.
@@ -102,19 +104,20 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 class CudaAggregatingTransform : public IProcessor
 {
 public:
-    CudaAggregatingTransform(Block header, AggregatingTransformParamsPtr params_);
+    CudaAggregatingTransform(Block header, CudaAggregatingTransformParamsPtr params_, ContextPtr context_);
 
     /// For Parallel aggregating.
     CudaAggregatingTransform(
         Block header,
-        AggregatingTransformParamsPtr params_,
-        ManyAggregatedDataPtr many_data,
+        CudaAggregatingTransformParamsPtr params_,
+        CudaAggregatedDataVariantsPtr variants_,
         size_t current_variant,
         size_t max_threads,
-        size_t temporary_data_merge_threads);
+        ContextPtr context_);//,
+        // size_t temporary_data_merge_threads);
     ~CudaAggregatingTransform() override;
 
-    String getName() const override { return "AggregatingTransform"; }
+    String getName() const override { return "CudaAggregatingTransform"; }
     Status prepare() override;
     void work() override;
     Processors expandPipeline() override;
@@ -123,11 +126,12 @@ protected:
     void consume(Chunk chunk);
 
 private:
+    ContextPtr context;
     /// To read the data that was flushed into the temporary data file.
     Processors processors;
 
-    AggregatingTransformParamsPtr params;
-    Poco::Logger * log = &Poco::Logger::get("AggregatingTransform");
+    CudaAggregatingTransformParamsPtr params;
+    Poco::Logger * log = &Poco::Logger::get("CudaAggregatingTransform");
 
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
@@ -139,10 +143,11 @@ private:
      */
     bool no_more_keys = false;
 
-    ManyAggregatedDataPtr many_data;
-    AggregatedDataVariants & variants;
+    // ManyAggregatedDataPtr many_data;
+    CudaAggregatedDataVariantsPtr variants;
+    // AggregatedDataVariants & variants;
     size_t max_threads = 1;
-    size_t temporary_data_merge_threads = 1;
+    // size_t temporary_data_merge_threads = 1;
 
     /// TODO: calculate time only for aggregation.
     Stopwatch watch;

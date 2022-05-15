@@ -34,14 +34,14 @@ protected:
 template<class T, typename TAllocator>
 CudaHostPinnedArray<T,TAllocator>::CudaHostPinnedArray(size_t sz_) : sz(sz_)
 {
-    d = (T*)TAllocator::alloc(sz*sizeof(T));
+    d = reinterpret_cast<T*>(TAllocator::alloc(sz * sizeof(T)));
     //CUDA_SAFE_CALL( cudaMallocHost((void**)&d, sz*sizeof(T)) );
 }
 
 template<class T, typename TAllocator>
 CudaHostPinnedArray<T,TAllocator>::~CudaHostPinnedArray()
 {
-    TAllocator::free(d, sz*sizeof(T));
+    TAllocator::free(d, sz * sizeof(T));
     //CUDA_SAFE_CALL_NOTHROW( cudaFreeHost(d) );
 }
 

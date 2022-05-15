@@ -12,7 +12,7 @@ public:
     }
 
     /// Free memory range.
-    void free(void * buf, size_t size)
+    void free(void * buf, size_t /*size*/)
     {
         CudaHostPinnedMemPool::instance().free(buf);
     }

@@ -31,7 +31,7 @@ protected:
 template<class T>
 CudaArray<T>::CudaArray(size_t sz_) : sz(sz_)
 {
-    CUDA_SAFE_CALL(cudaMalloc((void**)&d, sz*sizeof(T)));
+    CUDA_SAFE_CALL(cudaMalloc(reinterpret_cast<void**>(&d), sz * sizeof(T)));
 }
 
 template<class T>

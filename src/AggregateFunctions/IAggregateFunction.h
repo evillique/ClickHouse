@@ -310,13 +310,13 @@ public:
     /// Description of AggregateFunction in form of name(parameters)(argument_types).
     String getDescription() const;
 
-    #if USE_CUDA
+#if USE_CUDA
     virtual const CudaAggregateFunctionPtr  createCudaFunction() const
     {
         throw Exception("IAggregateFunction::createCudaFunction: aggregate function is not supported", ErrorCodes::CUDA_UNSUPPORTED_AGGREGATE_FUNCTION);
         return nullptr;
     }
-    #endif
+#endif
 
 #if USE_EMBEDDED_COMPILER
 
