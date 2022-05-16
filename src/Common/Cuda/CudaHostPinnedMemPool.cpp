@@ -20,7 +20,6 @@
 
 CudaHostPinnedMemPool::CudaHostPinnedMemPool()
 {
-
 }
 
 void CudaHostPinnedMemPool::init(std::size_t totalSize)

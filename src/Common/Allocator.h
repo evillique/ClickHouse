@@ -34,6 +34,7 @@
 
 #include <Common/Allocator_fwd.h>
 
+// #include <Common/Cuda/CudaHostPinnedMemPool.h>
 
 /// Required for older Darwin builds, that lack definition of MAP_ANONYMOUS
 #ifndef MAP_ANONYMOUS
@@ -94,6 +95,10 @@ public:
         checkSize(size);
         CurrentMemoryTracker::alloc(size);
         return allocNoTrack(size, alignment);
+        // void * buf = CudaHostPinnedMemPool::instance().alloc(size, alignment);
+        // if constexpr (clear_memory)
+        //     memset(buf, 0, size);
+        // return buf;
     }
 
     /// Free memory range.
@@ -103,6 +108,7 @@ public:
         {
             checkSize(size);
             freeNoTrack(buf, size);
+            // CudaHostPinnedMemPool::instance().free(buf);
             CurrentMemoryTracker::free(size);
         }
         catch (...)
@@ -125,6 +131,18 @@ public:
             /// nothing to do.
             /// BTW, it's not possible to change alignment while doing realloc.
         }
+        // else
+        // {
+        //     CurrentMemoryTracker::realloc(old_size, new_size);
+
+        //     void * new_buf = CudaHostPinnedMemPool::instance().realloc(buf, old_size, new_size, alignment);
+        //     if (nullptr == new_buf)
+        //         DB::throwFromErrno(fmt::format("Allocator: Cannot realloc from {} to {}.", ReadableSize(old_size), ReadableSize(new_size)), DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+        //     buf = new_buf;
+        //     if constexpr (clear_memory)
+        //         if (new_size > old_size)
+        //             memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
+        // }
         else if (old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD
                  && alignment <= MALLOC_MIN_ALIGNMENT)
         {
