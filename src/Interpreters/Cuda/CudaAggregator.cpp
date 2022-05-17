@@ -3,32 +3,32 @@
 #include <numeric>
 #include <Poco/Util/Application.h>
 
-#include <base/sort.h>
-#include <Common/Stopwatch.h>
-#include <Common/setThreadName.h>
-#include <Common/formatReadable.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnSparse.h>
-#include <Formats/NativeWriter.h>
-#include <IO/WriteBufferFromFile.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Interpreters/Aggregator.h>
-#include <Common/LRUCache.h>
-#include <Common/MemoryTracker.h>
-#include <Common/CurrentThread.h>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <Common/JSONBuilder.h>
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
-#include <IO/Operators.h>
-#include <Interpreters/JIT/compileFunction.h>
-#include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnTuple.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <Core/ProtocolDefines.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Formats/NativeWriter.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromFile.h>
+#include <Interpreters/Aggregator.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Interpreters/JIT/compileFunction.h>
+#include <base/sort.h>
+#include <Common/CurrentThread.h>
+#include <Common/JSONBuilder.h>
+#include <Common/LRUCache.h>
+#include <Common/MemoryTracker.h>
+#include <Common/Stopwatch.h>
+#include <Common/assert_cast.h>
+#include <Common/formatReadable.h>
+#include <Common/setThreadName.h>
+#include <Common/typeid_cast.h>
 
 #include <Parsers/ASTSelectQuery.h>
 
@@ -39,14 +39,14 @@
 
 namespace ProfileEvents
 {
-    extern const Event ExternalAggregationWritePart;
-    extern const Event ExternalAggregationCompressedBytes;
-    extern const Event ExternalAggregationUncompressedBytes;
+extern const Event ExternalAggregationWritePart;
+extern const Event ExternalAggregationCompressedBytes;
+extern const Event ExternalAggregationUncompressedBytes;
 }
 
 namespace CurrentMetrics
 {
-    extern const Metric QueryThread;
+extern const Metric QueryThread;
 }
 
 namespace DB
@@ -80,9 +80,10 @@ Block CudaAggregator::getHeader(bool final) const
             if (final)
                 type = params.aggregates[i].function->getReturnType();
             else
-                type = std::make_shared<DataTypeAggregateFunction>(params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
+                type = std::make_shared<DataTypeAggregateFunction>(
+                    params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
 
-            res.insert({ type, params.aggregates[i].column_name });
+            res.insert({type, params.aggregates[i].column_name});
         }
     }
     else if (params.intermediate_header)
@@ -105,8 +106,7 @@ Block CudaAggregator::getHeader(bool final) const
 }
 
 
-CudaAggregator::CudaAggregator(ContextPtr context_, const Params & params_)
-    : context(context_), params(params_)
+CudaAggregator::CudaAggregator(ContextPtr context_, const Params & params_) : context(context_), params(params_)
 {
     /// Here we cut off unsupported cases
 
@@ -141,11 +141,14 @@ CudaAggregator::CudaAggregator(ContextPtr context_, const Params & params_)
 
 // bool CudaAggregator::executeOnBlock(const Block & block, CudaAggregatedDataVariants & result,
 //     ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns)
-bool CudaAggregator::executeOnBlock(Columns columns, UInt64 num_rows, CudaAggregatedDataVariants & result,
-        ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
-        bool & /*no_more_keys*/) const
+bool CudaAggregator::executeOnBlock(
+    Columns columns,
+    UInt64 num_rows,
+    CudaAggregatedDataVariants & result,
+    ColumnRawPtrs & key_columns,
+    AggregateColumns & aggregate_columns, /// Passed to not create them anew for each block
+    bool & /*no_more_keys*/) const
 {
-
     for (size_t i = 0; i < params.aggregates_size; ++i)
         aggregate_columns[i].resize(params.aggregates[i].arguments.size());
 
@@ -197,13 +200,18 @@ bool CudaAggregator::executeOnBlock(Columns columns, UInt64 num_rows, CudaAggreg
     }
 
     /// TODO get rid of this const_cast (problems is getChars and getOffsets been nonconst methods)
-    ColumnString    *keys_column = const_cast<ColumnString*>(static_cast<const ColumnString*>(key_columns[0])),
-                    *vals_column = const_cast<ColumnString*>(static_cast<const ColumnString*>(aggregate_columns[0][0]));
+    ColumnString *keys_column = const_cast<ColumnString *>(static_cast<const ColumnString *>(key_columns[0])),
+                 *vals_column = const_cast<ColumnString *>(static_cast<const ColumnString *>(aggregate_columns[0][0]));
 
     // const Settings & settings = context->getSettingsRef();
-    result.strings_agg->queueData(num_rows,
-        keys_column->getChars().size(), reinterpret_cast<const char*>(keys_column->getChars().data()), keys_column->getOffsets().data(),
-        vals_column->getChars().size(), reinterpret_cast<const char*>(vals_column->getChars().data()), vals_column->getOffsets().data());
+    result.strings_agg->queueData(
+        num_rows,
+        keys_column->getChars().size(),
+        reinterpret_cast<const char *>(keys_column->getChars().data()),
+        keys_column->getOffsets().data(),
+        vals_column->getChars().size(),
+        reinterpret_cast<const char *>(vals_column->getChars().data()),
+        vals_column->getOffsets().data());
     result.strings_agg->waitQueueData();
 
     return true;
@@ -316,16 +324,14 @@ bool CudaAggregator::executeOnBlock(Columns columns, UInt64 num_rows, CudaAggreg
 
 
 void NO_INLINE CudaAggregator::convertToBlockImplFinal(
-    CudaAggregatedDataVariants & data_variants,
-    MutableColumns & key_columns,
-    MutableColumns & final_aggregate_columns) const
+    CudaAggregatedDataVariants & data_variants, MutableColumns & key_columns, MutableColumns & final_aggregate_columns) const
 {
-    for (const auto &elem : data_variants.strings_agg->getResult())
+    for (const auto & elem : data_variants.strings_agg->getResult())
     {
         key_columns[0]->insertData(elem.first.c_str(), elem.first.length());
 
         /// TODO we must have special interface for this insertion
-        UInt64  res = cuda_agg_function->getResult(elem.second);
+        UInt64 res = cuda_agg_function->getResult(elem.second);
         static_cast<ColumnUInt64 &>(*final_aggregate_columns[0]).getData().push_back(res);
     }
 
@@ -334,14 +340,12 @@ void NO_INLINE CudaAggregator::convertToBlockImplFinal(
 
 
 template <typename Filler>
-Block CudaAggregator::prepareBlockAndFill(
-    CudaAggregatedDataVariants & data_variants,
-    bool final,
-    size_t rows,
-    Filler && filler) const
+Block CudaAggregator::prepareBlockAndFill(CudaAggregatedDataVariants & data_variants, bool final, size_t rows, Filler && filler) const
 {
     /// TODO unused parameter
-    if (data_variants.empty()) {}
+    if (data_variants.empty())
+    {
+    }
 
     MutableColumns key_columns(params.keys_size);
     MutableColumns final_aggregate_columns(params.aggregates_size);
@@ -396,12 +400,8 @@ Block CudaAggregator::prepareBlockAndFillSingleLevel(CudaAggregatedDataVariants 
     data_variants.waitProcessed();
     size_t rows = data_variants.strings_agg->getResult().size();
 
-    auto filler = [&data_variants, this](
-        MutableColumns & key_columns,
-        MutableColumns & final_aggregate_columns)
-    {
-        convertToBlockImplFinal(data_variants, key_columns, final_aggregate_columns);
-    };
+    auto filler = [&data_variants, this](MutableColumns & key_columns, MutableColumns & final_aggregate_columns)
+    { convertToBlockImplFinal(data_variants, key_columns, final_aggregate_columns); };
 
     return prepareBlockAndFill(data_variants, final, rows, filler);
 }

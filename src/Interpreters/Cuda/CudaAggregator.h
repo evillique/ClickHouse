@@ -1,8 +1,8 @@
 #pragma once
 
-#include <mutex>
-#include <memory>
 #include <functional>
+#include <memory>
+#include <mutex>
 
 #include <base/logger_useful.h>
 
@@ -10,12 +10,12 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/TwoLevelHashMap.h>
 #include <Common/HashTable/StringHashMap.h>
+#include <Common/HashTable/TwoLevelHashMap.h>
 #include <Common/HashTable/TwoLevelStringHashMap.h>
 
-#include <Common/ThreadPool.h>
 #include <Common/ColumnsHashing.h>
+#include <Common/ThreadPool.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
 
@@ -27,21 +27,21 @@
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/JIT/compileFunction.h>
 
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnVector.h>
 
 #include <Parsers/IAST_fwd.h>
 
 #include <Interpreters/Context_fwd.h>
 
-#include <Interpreters/Context.h>
-#include <Interpreters/Aggregator.h>
-#include <Interpreters/Cuda/CudaStringsAggregator.h>
 #include <AggregateFunctions/Cuda/ICudaAggregateFunction.h>
+#include <Interpreters/Aggregator.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/Cuda/CudaStringsAggregator.h>
 
 namespace DB
 {
@@ -53,8 +53,8 @@ namespace ErrorCodes
 
 struct CudaAggregatedDataVariants : private boost::noncopyable
 {
-    bool                                    empty_ = true;
-    std::unique_ptr<CudaStringsAggregator>  strings_agg;
+    bool empty_ = true;
+    std::unique_ptr<CudaStringsAggregator> strings_agg;
 
     bool empty() const { return empty_; }
 
@@ -63,9 +63,12 @@ struct CudaAggregatedDataVariants : private boost::noncopyable
         const Settings & settings = context->getSettingsRef();
         /// There are no variants for now
         strings_agg = std::make_unique<decltype(strings_agg)::element_type>(
-            settings.cuda_device_number, settings.cuda_chunks_number,
-            settings.cuda_hash_table_max_size, settings.cuda_hash_table_strings_buffer_max_size,
-            settings.cuda_buffer_max_strings_number, settings.cuda_buffer_max_size,
+            settings.cuda_device_number,
+            settings.cuda_chunks_number,
+            settings.cuda_hash_table_max_size,
+            settings.cuda_hash_table_strings_buffer_max_size,
+            settings.cuda_buffer_max_strings_number,
+            settings.cuda_buffer_max_size,
             cuda_agg_function);
         empty_ = false;
     }
@@ -100,8 +103,12 @@ public:
     using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
     using AggregateColumnsConstData = std::vector<const ColumnAggregateFunction::Container *>;
 
-    bool executeOnBlock(Columns columns, UInt64 num_rows, CudaAggregatedDataVariants & result,
-        ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
+    bool executeOnBlock(
+        Columns columns,
+        UInt64 num_rows,
+        CudaAggregatedDataVariants & result,
+        ColumnRawPtrs & key_columns,
+        AggregateColumns & aggregate_columns, /// Passed to not create them anew for each block
         bool & no_more_keys) const;
 
     // /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
@@ -126,25 +133,18 @@ protected:
 
     /// NOTE i took it form RemoteBlockInputStream; not sure if it's ok to copy wholy 'context'
     ContextPtr context;
-    Params  params;
+    Params params;
 
     CudaAggregateFunctionPtr cuda_agg_function;
 
     Poco::Logger * log = &Poco::Logger::get("CudaAggregator");
 
 protected:
-
     void convertToBlockImplFinal(
-        CudaAggregatedDataVariants & data_variants,
-        MutableColumns & key_columns,
-        MutableColumns & final_aggregate_columns) const;
+        CudaAggregatedDataVariants & data_variants, MutableColumns & key_columns, MutableColumns & final_aggregate_columns) const;
 
     template <typename Filler>
-    Block prepareBlockAndFill(
-        CudaAggregatedDataVariants & data_variants,
-        bool final,
-        size_t rows,
-        Filler && filler) const;
+    Block prepareBlockAndFill(CudaAggregatedDataVariants & data_variants, bool final, size_t rows, Filler && filler) const;
 
     Block prepareBlockAndFillSingleLevel(CudaAggregatedDataVariants & data_variants, bool final) const;
 };

@@ -20,9 +20,5 @@ inline __device__ DB::UInt32 cudaIntHash32(DB::UInt64 key)
 template <typename T, DB::UInt64 salt = 0>
 struct CudaIntHash32
 {
-    __device__ DB::UInt32 operator() (const T & key) const
-    {
-        return cudaIntHash32<salt>(key);
-    }
+    __device__ DB::UInt32 operator()(const T & key) const { return cudaIntHash32<salt>(key); }
 };
-

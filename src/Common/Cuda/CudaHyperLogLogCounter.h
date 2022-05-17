@@ -1,19 +1,19 @@
 #pragma once
 
-#include <stdexcept>
 #include <cmath>
+#include <stdexcept>
 
 #include <base/types.h>
-#include <Common/Cuda/CudaIntHash32.h>
 #include <Common/Cuda/CudaAtomics.cuh>
 #include <Common/Cuda/CudaHyperLogLogBiasEstimator.h>
+#include <Common/Cuda/CudaIntHash32.h>
 
 /// Sets denominator type.
 enum class DenominatorMode
 {
-    Compact,        /// Compact denominator.
-    StableIfBig,    /// Stable denominator falling back to Compact if rank storage is not big enough.
-    ExactType       /// Denominator of specified exact type.
+    Compact, /// Compact denominator.
+    StableIfBig, /// Stable denominator falling back to Compact if rank storage is not big enough.
+    ExactType /// Denominator of specified exact type.
 };
 
 namespace cuda_details
@@ -44,36 +44,52 @@ private:
     double log_table[M + 1];
 };
 
-template <DB::UInt8 K> struct MinCounterTypeHelper;
-template <> struct MinCounterTypeHelper<0>    { using Type = DB::UInt8; };
-template <> struct MinCounterTypeHelper<1>    { using Type = DB::UInt16; };
-template <> struct MinCounterTypeHelper<2>    { using Type = DB::UInt32; };
-template <> struct MinCounterTypeHelper<3>    { using Type = DB::UInt64; };
+template <DB::UInt8 K>
+struct MinCounterTypeHelper;
+template <>
+struct MinCounterTypeHelper<0>
+{
+    using Type = DB::UInt8;
+};
+template <>
+struct MinCounterTypeHelper<1>
+{
+    using Type = DB::UInt16;
+};
+template <>
+struct MinCounterTypeHelper<2>
+{
+    using Type = DB::UInt32;
+};
+template <>
+struct MinCounterTypeHelper<3>
+{
+    using Type = DB::UInt64;
+};
 
 /// Auxiliary structure for automatic determining minimum size of counter's type depending on its maximum value.
 /// Used in HyperLogLogCounter in order to spend memory efficiently.
-template <DB::UInt64 MaxValue> struct MinCounterType
+template <DB::UInt64 MaxValue>
+struct MinCounterType
 {
-    using Type = typename MinCounterTypeHelper<
-        (MaxValue >= 1 << 8) +
-        (MaxValue >= 1 << 16) +
-        (MaxValue >= 1ULL << 32)
-        >::Type;
+    using Type = typename MinCounterTypeHelper<(MaxValue >= 1 << 8) + (MaxValue >= 1 << 16) + (MaxValue >= 1ULL << 32)>::Type;
 };
 
 /// Denominator of expression for HyperLogLog algorithm.
-template <DB::UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
-    DenominatorMode denominator_mode, typename Enable = void>
+template <
+    DB::UInt8 precision,
+    int max_rank,
+    typename HashValueType,
+    typename DenominatorType,
+    DenominatorMode denominator_mode,
+    typename Enable = void>
 class Denominator;
 
 namespace
 {
 
-/// Returns true if rank storage is big.
-constexpr bool isBigRankStore(DB::UInt8 precision)
-{
-    return precision >= 12;
-}
+    /// Returns true if rank storage is big.
+    constexpr bool isBigRankStore(DB::UInt8 precision) { return precision >= 12; }
 
 }
 
@@ -82,7 +98,11 @@ template <typename HashValueType, typename DenominatorType, DenominatorMode deno
 struct IntermediateDenominator;
 
 template <typename DenominatorType, DenominatorMode denominator_mode>
-struct IntermediateDenominator<DB::UInt32, DenominatorType, denominator_mode, typename std::enable_if<denominator_mode != DenominatorMode::ExactType>::type>
+struct IntermediateDenominator<
+    DB::UInt32,
+    DenominatorType,
+    denominator_mode,
+    typename std::enable_if<denominator_mode != DenominatorMode::ExactType>::type>
 {
     using Type = double;
 };
@@ -102,9 +122,12 @@ struct IntermediateDenominator<HashValueType, DenominatorType, DenominatorMode::
 /// "Lightweight" implementation of expression's denominator for HyperLogLog algorithm.
 /// Uses minimum amount of memory, but estimates may be unstable.
 /// Satisfiable when rank storage is small enough.
-template <DB::UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
-    DenominatorMode denominator_mode>
-class Denominator<precision, max_rank, HashValueType, DenominatorType,
+template <DB::UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType, DenominatorMode denominator_mode>
+class Denominator<
+    precision,
+    max_rank,
+    HashValueType,
+    DenominatorType,
     denominator_mode,
     typename std::enable_if<!cuda_details::isBigRankStore(precision) || !(denominator_mode == DenominatorMode::StableIfBig)>::type>
 {
@@ -112,38 +135,20 @@ private:
     using T = typename IntermediateDenominator<HashValueType, DenominatorType, denominator_mode>::Type;
 
 public:
-    __device__ __host__ void initNonzeroData(DenominatorType initial_value)
-    {
-        denominator = initial_value;
-    }
-    __device__ __host__ Denominator(DenominatorType initial_value)
-        : denominator(initial_value)
-    {
-    }
+    __device__ __host__ void initNonzeroData(DenominatorType initial_value) { denominator = initial_value; }
+    __device__ __host__ Denominator(DenominatorType initial_value) : denominator(initial_value) { }
 
 public:
     inline __device__ void update(DB::UInt8 cur_rank, DB::UInt8 new_rank)
     {
-        cuda_details::atomicAdd(&denominator,
-             + static_cast<T>(1.0) / (1ULL << new_rank)
-             - static_cast<T>(1.0) / (1ULL << cur_rank));
+        cuda_details::atomicAdd(&denominator, +static_cast<T>(1.0) / (1ULL << new_rank) - static_cast<T>(1.0) / (1ULL << cur_rank));
     }
 
-    inline __device__ void update(DB::UInt8 rank)
-    {
-        cuda_details::atomicAdd(&denominator,
-            static_cast<T>(1.0) / (1ULL << rank));
-    }
+    inline __device__ void update(DB::UInt8 rank) { cuda_details::atomicAdd(&denominator, static_cast<T>(1.0) / (1ULL << rank)); }
 
-    __device__ void clear()
-    {
-        denominator = 0;
-    }
+    __device__ void clear() { denominator = 0; }
 
-    DenominatorType get() const
-    {
-        return denominator;
-    }
+    DenominatorType get() const { return denominator; }
 
 private:
     T denominator;
@@ -152,22 +157,23 @@ private:
 /// Fully-functional version of expression's denominator for HyperLogLog algorithm.
 /// Spends more space that lightweight version. Estimates will always be stable.
 /// Used when rank storage is big.
-template <DB::UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
-    DenominatorMode denominator_mode>
-class Denominator<precision, max_rank, HashValueType, DenominatorType,
+template <DB::UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType, DenominatorMode denominator_mode>
+class Denominator<
+    precision,
+    max_rank,
+    HashValueType,
+    DenominatorType,
     denominator_mode,
     typename std::enable_if<cuda_details::isBigRankStore(precision) && denominator_mode == DenominatorMode::StableIfBig>::type>
 {
 public:
-    __device__ __host__ void initNonzeroData(DenominatorType initial_value)
-    {
-        rank_count[0] = initial_value;
-    }
+    __device__ __host__ void initNonzeroData(DenominatorType initial_value) { rank_count[0] = initial_value; }
     __device__ __host__ Denominator(DenominatorType initial_value)
     {
         //memset(rank_count, 0, size * sizeof(DB::UInt32));
         rank_count[0] = initial_value;
-        for (uint32_t i = 1;i < size;++i) rank_count[i] = 0;
+        for (uint32_t i = 1; i < size; ++i)
+            rank_count[i] = 0;
     }
 
     inline __device__ void update(DB::UInt8 cur_rank, DB::UInt8 new_rank)
@@ -176,15 +182,9 @@ public:
         cuda_details::atomicAdd(&(rank_count[new_rank]), (DB::UInt32)1);
     }
 
-    inline __device__ void update(DB::UInt8 rank)
-    {
-        cuda_details::atomicAdd(&(rank_count[rank]), (DB::UInt32)1);
-    }
+    inline __device__ void update(DB::UInt8 rank) { cuda_details::atomicAdd(&(rank_count[rank]), (DB::UInt32)1); }
 
-    __device__ void clear()
-    {
-        memset(rank_count, 0, size * sizeof(DB::UInt32));
-    }
+    __device__ void clear() { memset(rank_count, 0, size * sizeof(DB::UInt32)); }
 
     DenominatorType get() const
     {
@@ -209,19 +209,13 @@ struct TrailingZerosCounter;
 template <>
 struct TrailingZerosCounter<DB::UInt32>
 {
-    static __device__ int apply(DB::UInt32 val)
-    {
-        return __ffs(val)-1;
-    }
+    static __device__ int apply(DB::UInt32 val) { return __ffs(val) - 1; }
 };
 
 template <>
 struct TrailingZerosCounter<DB::UInt64>
 {
-    static __device__ int apply(DB::UInt64 val)
-    {
-        return __ffsll(val)-1;
-    }
+    static __device__ int apply(DB::UInt64 val) { return __ffsll(val) - 1; }
 };
 
 /// Size of counter's rank in bits.
@@ -231,19 +225,13 @@ struct RankWidth;
 template <>
 struct RankWidth<DB::UInt32>
 {
-    static constexpr DB::UInt8 get()
-    {
-        return 5;
-    }
+    static constexpr DB::UInt8 get() { return 5; }
 };
 
 template <>
 struct RankWidth<DB::UInt64>
 {
-    static constexpr DB::UInt8 get()
-    {
-        return 6;
-    }
+    static constexpr DB::UInt8 get() { return 6; }
 };
 
 }
@@ -251,10 +239,10 @@ struct RankWidth<DB::UInt64>
 /// Sets behavior of HyperLogLog class.
 enum class CudaHyperLogLogMode
 {
-    Raw,            /// No error correction.
+    Raw, /// No error correction.
     LinearCounting, /// LinearCounting error correction.
-    BiasCorrected,  /// HyperLogLog++ error correction.
-    FullFeatured    /// LinearCounting or HyperLogLog++ error correction (depending).
+    BiasCorrected, /// HyperLogLog++ error correction.
+    FullFeatured /// LinearCounting or HyperLogLog++ error correction (depending).
 };
 
 
@@ -289,7 +277,8 @@ public:
     __device__ __host__ CudaHyperLogLogCounter() : denominator(bucket_count), zeros(bucket_count)
     {
         //memset(rank_store, 0, bucket_count * sizeof(DB::UInt8));
-        for (uint32_t i = 0;i < bucket_count;++i) rank_store[i] = 0;
+        for (uint32_t i = 0; i < bucket_count; ++i)
+            rank_store[i] = 0;
     }
     __device__ void insert(Value_t value)
     {
@@ -307,13 +296,13 @@ public:
     DB::UInt64 size() const
     {
         /// Normalizing factor for harmonic mean.
-        static constexpr double alpha_m =
-            bucket_count == 2  ? 0.351 :
-            bucket_count == 4  ? 0.532 :
-            bucket_count == 8  ? 0.626 :
-            bucket_count == 16 ? 0.673 :
-            bucket_count == 32 ? 0.697 :
-            bucket_count == 64 ? 0.709 : 0.7213 / (1 + 1.079 / bucket_count);
+        static constexpr double alpha_m = bucket_count == 2 ? 0.351
+            : bucket_count == 4                             ? 0.532
+            : bucket_count == 8                             ? 0.626
+            : bucket_count == 16                            ? 0.673
+            : bucket_count == 32                            ? 0.697
+            : bucket_count == 64                            ? 0.709
+                                                            : 0.7213 / (1 + 1.079 / bucket_count);
 
         /// Harmonic mean for all buckets of 2^rank values is: bucket_count / ∑ 2^-rank_i,
         /// where ∑ 2^-rank_i - is denominator.
@@ -353,10 +342,7 @@ private:
         return zeros_plus_one;
     }
 
-    inline __device__ HashValueType getHash(Value_t key) const
-    {
-        return Hash::operator()(key);
-    }
+    inline __device__ HashValueType getHash(Value_t key) const { return Hash::operator()(key); }
 
     /// Update maximum rank for current bucket.
     void __device__ update(HashValueType bucket, DB::UInt8 rank)
@@ -471,23 +457,13 @@ private:
     static_assert(precision < (sizeof(HashValueType) * 8), "Invalid parameter value");
 };
 
-template
-<
+template <
     DB::UInt8 precision,
     typename Hash,
     typename HashValueType,
     typename DenominatorType,
     typename BiasEstimator,
     CudaHyperLogLogMode mode,
-    DenominatorMode denominator_mode
->
-cuda_details::LogLUT<precision> CudaHyperLogLogCounter
-<
-    precision,
-    Hash,
-    HashValueType,
-    DenominatorType,
-    BiasEstimator,
-    mode,
-    denominator_mode
->::log_lut;
+    DenominatorMode denominator_mode>
+cuda_details::LogLUT<precision>
+    CudaHyperLogLogCounter<precision, Hash, HashValueType, DenominatorType, BiasEstimator, mode, denominator_mode>::log_lut;

@@ -1,18 +1,17 @@
-#include <Processors/QueryPlan/Cuda/CudaAggregatingStep.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Transforms/Cuda/CudaAggregatingTransform.h>
-#include <Processors/Transforms/AggregatingInOrderTransform.h>
-#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
+#include <Processors/QueryPlan/Cuda/CudaAggregatingStep.h>
+#include <Processors/Transforms/AggregatingInOrderTransform.h>
+#include <Processors/Transforms/Cuda/CudaAggregatingTransform.h>
+#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
 
 static ITransformingStep::Traits getTraits()
 {
-    return ITransformingStep::Traits
-    {
+    return ITransformingStep::Traits{
         {
             .preserves_distinct_columns = false, /// Actually, we may check that distinct names are in aggregation keys
             .returns_single_stream = true,
@@ -21,8 +20,7 @@ static ITransformingStep::Traits getTraits()
         },
         {
             .preserves_number_of_rows = false,
-        }
-    };
+        }};
 }
 
 CudaAggregatingStep::CudaAggregatingStep(
@@ -158,7 +156,7 @@ void CudaAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, con
         /// Add resize transform to uniformly distribute data between aggregating streams.
         // if (!storage_has_evenly_distributed_read)
         //     pipeline.resize(pipeline.getNumStreams(), true, true);
-        
+
         pipeline.resize(1, true, true);
         // auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
 
@@ -166,10 +164,12 @@ void CudaAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, con
 
         size_t counter = 0;
 
-        pipeline.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<CudaAggregatingTransform>(header, transform_params, many_data, counter++, merge_threads, context);//, temporary_data_merge_threads);
-        });
+        pipeline.addSimpleTransform(
+            [&](const Block & header)
+            {
+                return std::make_shared<CudaAggregatingTransform>(
+                    header, transform_params, many_data, counter++, merge_threads, context); //, temporary_data_merge_threads);
+            });
 
         pipeline.resize(1);
 
@@ -181,9 +181,7 @@ void CudaAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, con
         pipeline.resize(1);
 
         pipeline.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<CudaAggregatingTransform>(header, transform_params, context);
-        });
+                                    { return std::make_shared<CudaAggregatingTransform>(header, transform_params, context); });
 
         aggregating = collector.detachProcessors(0);
     }

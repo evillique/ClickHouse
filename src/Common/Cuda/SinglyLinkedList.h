@@ -25,7 +25,7 @@ SinglyLinkedList<T>::SinglyLinkedList()
 }
 
 template <class T>
-void SinglyLinkedList<T>::insert(Node* previousNode, Node* newNode)
+void SinglyLinkedList<T>::insert(Node * previousNode, Node * newNode)
 {
     if (previousNode == nullptr)
     {
@@ -59,7 +59,7 @@ void SinglyLinkedList<T>::insert(Node* previousNode, Node* newNode)
 }
 
 template <class T>
-void SinglyLinkedList<T>::remove(Node* previousNode, Node* deleteNode)
+void SinglyLinkedList<T>::remove(Node * previousNode, Node * deleteNode)
 {
     if (previousNode == nullptr)
     {
@@ -80,4 +80,3 @@ void SinglyLinkedList<T>::remove(Node* previousNode, Node* deleteNode)
         previousNode->next = deleteNode->next;
     }
 }
-

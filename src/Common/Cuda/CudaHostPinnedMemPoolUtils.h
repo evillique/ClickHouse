@@ -23,7 +23,7 @@ public:
 
             // How many alignments I need to fit the header
             if (neededSpace % alignment > 0)
-                padding += alignment * (1+(neededSpace / alignment));
+                padding += alignment * (1 + (neededSpace / alignment));
             else
                 padding += alignment * (neededSpace / alignment);
         }

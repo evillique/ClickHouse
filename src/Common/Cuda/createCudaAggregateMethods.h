@@ -6,7 +6,7 @@
 namespace DB
 {
 
-void createCudaAggregateMethods(const Context &context)
+void createCudaAggregateMethods(const Context & context)
 {
     CudaAggregateMethods::instance().createMethods(context);
 }

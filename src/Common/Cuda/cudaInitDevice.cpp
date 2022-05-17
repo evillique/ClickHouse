@@ -1,5 +1,5 @@
-#include <Common/Cuda/cudaInitDevice.h>
 #include <Common/Cuda/CudaHostPinnedMemPool.h>
+#include <Common/Cuda/cudaInitDevice.h>
 
 void cudaInitDevice(int dev_number, size_t pinned_pool_size)
 {
