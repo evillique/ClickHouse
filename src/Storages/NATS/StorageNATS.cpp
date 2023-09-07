@@ -592,9 +592,8 @@ void StorageNATS::streamingToViewsFunc()
                 if (streamToViews())
                 {
                     /// Reschedule with backoff.
-                    break;
-                } else {
                     do_reschedule = false;
+                    break;
                 }
 
                 auto end_time = std::chrono::steady_clock::now();
