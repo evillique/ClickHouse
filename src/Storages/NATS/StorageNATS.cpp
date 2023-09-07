@@ -109,6 +109,7 @@ StorageNATS::StorageNATS(
             }
 
             LOG_DEBUG(log, "Connect attempt #{} failed, error: {}. Reconnecting...", i + 1, nats_GetLastError(nullptr));
+            std::this_thread::sleep_for(std::chrono::milliseconds(configuration.reconnect_wait));
         }
     }
     catch (...)
@@ -591,8 +592,9 @@ void StorageNATS::streamingToViewsFunc()
                 if (streamToViews())
                 {
                     /// Reschedule with backoff.
-                    do_reschedule = false;
                     break;
+                } else {
+                    do_reschedule = false;
                 }
 
                 auto end_time = std::chrono::steady_clock::now();
