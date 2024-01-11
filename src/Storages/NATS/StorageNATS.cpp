@@ -192,6 +192,7 @@ void StorageNATS::loopingFunc()
 void StorageNATS::stopLoop()
 {
     connection->getHandler().updateLoopState(Loop::STOP);
+    connection->getHandler().stopLoop();
 }
 
 void StorageNATS::stopLoopIfNoReaders()
@@ -206,6 +207,7 @@ void StorageNATS::stopLoopIfNoReaders()
     if (readers_count)
         return;
     connection->getHandler().updateLoopState(Loop::STOP);
+    connection->getHandler().stopLoop();
 }
 
 void StorageNATS::startLoop()
