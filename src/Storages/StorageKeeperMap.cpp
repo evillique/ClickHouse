@@ -32,6 +32,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
+#include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/KVStorageUtils.h>
 #include <Storages/StorageFactory.h>
@@ -1555,6 +1556,16 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
     }
 
     sink->finalize<true>(strict);
+}
+
+void StorageKeeperMap::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const
+{
+    for (const auto & command : commands)
+    {
+        if (command.type != AlterCommand::COMMENT_TABLE)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                command.type, getName());
+    }
 }
 
 namespace

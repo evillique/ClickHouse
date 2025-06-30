@@ -67,6 +67,8 @@ public:
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const override;
+
     bool supportsParallelInsert() const override { return true; }
     bool supportsDelete() const override { return true; }
 
