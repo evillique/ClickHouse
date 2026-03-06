@@ -1,7 +1,7 @@
 #include <Databases/TablesLoader.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DDLDependencyVisitor.h>
-#include <Databases/DDLLoadingDependencyVisitor.h>
+#include <Databases/DDLHardDependencyVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -24,10 +24,10 @@ TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases database
     , databases(std::move(databases_))
     , strictness_mode(strictness_mode_)
     , referential_dependencies("ReferentialDeps")
-    , loading_dependencies("LoadingDeps")
+    , hard_dependencies("HardDeps")
     , mv_to_dependencies("MaterializedViewToDeps")
     , mv_from_dependencies("MaterializedViewFromDeps")
-    , all_loading_dependencies("LoadingDeps")
+    , all_referential_dependencies("ReferentialDeps")
     , async_loader(global_context->getAsyncLoader())
 {
     metadata.default_database = global_context->getCurrentDatabase();
@@ -69,7 +69,7 @@ LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
     buildDependencyGraph();
 
     /// Update existing info (it's important for ATTACH DATABASE)
-    DatabaseCatalog::instance().addDependencies(referential_dependencies, loading_dependencies, mv_from_dependencies);
+    DatabaseCatalog::instance().addDependencies(referential_dependencies, hard_dependencies, mv_from_dependencies);
 
     /// Remove tables that do not exist
     removeUnresolvableDependencies();
@@ -79,11 +79,11 @@ LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
     ContextMutablePtr load_context = Context::createCopy(global_context);
     load_context->setSetting("cast_ipv4_ipv6_default_on_conversion_error", 1);
 
-    for (const auto & table_id : all_loading_dependencies.getTablesSortedByDependency())
+    for (const auto & table_id : all_referential_dependencies.getTablesSortedByDependency())
     {
         /// Gather tasks to load before this table
         LoadTaskPtrs load_dependency_tasks;
-        for (const StorageID & dependency_id : all_loading_dependencies.getDependencies(table_id))
+        for (const StorageID & dependency_id : all_referential_dependencies.getDependencies(table_id))
             load_dependency_tasks.push_back(load_table[dependency_id.getFullTableName()]);
 
         // Make load table task
@@ -108,30 +108,14 @@ LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
 {
     LoadTaskPtrs result;
     std::unordered_map<String, LoadTaskPtrs> startup_database; /// database name -> all its tables startup tasks
-    TablesDependencyGraph all_startup_dependencies("AllStartupMvDependencies");
-    all_startup_dependencies = all_loading_dependencies;
 
-    /// CREATE MATERIALIZED VIEW mv TO tgt AS SELECT ... FROM src
-    /// introduces two dependencies:  mv depends on tgt (mv_to_dependencies), src depends on mv (mv_from_dependencies)
-    /// src table must be started up when mv is ready, otherwise we lose data inserted in src
-    for (const auto & table_id : mv_to_dependencies.getTables())
-    {
-        auto storage_id_vector = mv_to_dependencies.getDependencies(table_id);
-        for (const auto & storage_id : storage_id_vector)
-            all_startup_dependencies.addDependency(storage_id, table_id);
-    }
-    for (const auto & table_id : mv_from_dependencies.getTables())
-    {
-        auto storage_id_vector = mv_from_dependencies.getDependencies(table_id);
-        for (const auto & storage_id : storage_id_vector)
-            all_startup_dependencies.addDependency(table_id, storage_id);
-    }
-
-    for (const auto & table_id : all_startup_dependencies.getTablesSortedByDependency())
+    /// Referential dependencies already include MV dependencies (mv_to and mv_from edges),
+    /// so we directly use all_referential_dependencies for startup ordering as well.
+    for (const auto & table_id : all_referential_dependencies.getTablesSortedByDependency())
     {
         /// Gather tasks to startup before this table
         LoadTaskPtrs startup_mv_dependency_tasks;
-        for (const StorageID & dependency_id : all_startup_dependencies.getDependencies(table_id))
+        for (const StorageID & dependency_id : all_referential_dependencies.getDependencies(table_id))
             if (startup_table.contains(dependency_id.getFullTableName()))
                 startup_mv_dependency_tasks.push_back(startup_table[dependency_id.getFullTableName()]);
 
@@ -170,7 +154,7 @@ void TablesLoader::buildDependencyGraph()
     for (const auto & [table_name, table_metadata] : metadata.parsed_tables)
     {
         auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast, global_context->getCurrentDatabase());
-        auto new_loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast);
+        auto new_hard_dependencies = getHardDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast);
 
         if (!new_ref_dependencies.dependencies.empty())
             referential_dependencies.addDependencies(table_name, new_ref_dependencies.dependencies);
@@ -180,16 +164,16 @@ void TablesLoader::buildDependencyGraph()
         if (new_ref_dependencies.mv_from_dependency)
             mv_from_dependencies.addDependency(new_ref_dependencies.mv_from_dependency.value(), StorageID{table_name});
 
-        if (!new_loading_dependencies.empty())
-            loading_dependencies.addDependencies(table_name, new_loading_dependencies);
+        if (!new_hard_dependencies.empty())
+            hard_dependencies.addDependencies(table_name, new_hard_dependencies);
 
-        /// We're adding `new_loading_dependencies` to the graph here even if they're empty because
-        /// we need to have all tables from `metadata.parsed_tables` in the graph.
-        all_loading_dependencies.addDependencies(table_name, new_loading_dependencies);
+        /// We add the table to the referential dependency graph even if it has no dependencies,
+        /// because we need all tables from `metadata.parsed_tables` in the graph for topological sorting.
+        all_referential_dependencies.addDependencies(table_name, new_ref_dependencies.dependencies);
     }
 
     referential_dependencies.log();
-    all_loading_dependencies.log();
+    all_referential_dependencies.log();
     mv_from_dependencies.log();
     mv_to_dependencies.log();
 }
@@ -214,7 +198,7 @@ void TablesLoader::removeUnresolvableDependencies()
                 log,
                 "Tables {} depend on XML dictionary {}, but XML dictionaries are loaded independently."
                 "Consider converting it to DDL dictionary.",
-                fmt::join(all_loading_dependencies.getDependents(table_id), ", "),
+                fmt::join(all_referential_dependencies.getDependents(table_id), ", "),
                 table_id);
         }
         else
@@ -225,27 +209,29 @@ void TablesLoader::removeUnresolvableDependencies()
             LOG_WARNING(
                 log,
                 "Tables {} depend on {}, but seems like that does not exist. Will ignore it and try to load existing tables",
-                fmt::join(all_loading_dependencies.getDependents(table_id), ", "),
+                fmt::join(all_referential_dependencies.getDependents(table_id), ", "),
                 table_id);
         }
 
         size_t num_dependencies;
         size_t num_dependents;
-        all_loading_dependencies.getNumberOfAdjacents(table_id, num_dependencies, num_dependents);
-        if (num_dependencies || !num_dependents)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not have dependencies and dependent tables as it expected to."
+        all_referential_dependencies.getNumberOfAdjacents(table_id, num_dependencies, num_dependents);
+        /// With referential dependencies, external tables may have outgoing deps (unlike loading deps),
+        /// so we only check that the table has at least some dependents (it must, since it was found in the graph).
+        if (!num_dependents)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not have dependent tables as expected. "
                                                        "It's a bug", table_id);
 
         return true; /// Exclude this dependency.
     };
 
-    all_loading_dependencies.removeTablesIf(need_exclude_dependency); // NOLINT
+    all_referential_dependencies.removeTablesIf(need_exclude_dependency); // NOLINT
 
-    if (all_loading_dependencies.getNumberOfTables() != metadata.parsed_tables.size())
+    if (all_referential_dependencies.getNumberOfTables() != metadata.parsed_tables.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of tables to be loaded is not as expected. It's a bug");
 
     /// Cannot load tables with cyclic dependencies.
-    all_loading_dependencies.checkNoCyclicDependencies();
+    all_referential_dependencies.checkNoCyclicDependencies();
 }
 
 }

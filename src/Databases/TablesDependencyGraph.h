@@ -27,10 +27,12 @@ using LoggerPtr = std::shared_ptr<Poco::Logger>;
 /// This class is used to represent various types of table-table dependencies:
 /// 1. View dependencies: "source_table -> materialized_view".
 ///    Data inserted to a source table is also inserted to corresponding materialized views.
-/// 2. Loading dependencies: specify in which order tables must be loaded during startup.
-///    For example a dictionary should be loaded after it's source table and it's written in the graph as "dictionary -> source_table".
+/// 2. Hard dependencies: a subset of referential dependencies representing only structural dependencies
+///    (e.g. dictGet() in column defaults, dictionary sources, TTL expressions).
+///    A table will fail to load without its hard dependencies, so they are checked by default
+///    when trying to DROP or RENAME a table (see the `check_table_dependencies` setting).
 /// 3. Referential dependencies: "table -> all tables mentioned in its definition".
-///    Referential dependencies are checked to decide if it's safe to drop a table (it can be unsafe if the table is used by another table).
+///    Referential dependencies are used for table loading order and checked to decide if it's safe to drop a table.
 ///
 /// WARNING: This class doesn't have an embedded mutex, so it must be synchronized outside.
 class TablesDependencyGraph

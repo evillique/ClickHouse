@@ -3,7 +3,7 @@
 #include <Core/QualifiedTableName.h>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Databases/DDLLoadingDependencyVisitor.h>
+#include <Databases/DDLHardDependencyVisitor.h>
 
 
 namespace DB

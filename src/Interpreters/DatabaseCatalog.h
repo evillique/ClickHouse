@@ -218,21 +218,23 @@ public:
 
     /// Referential dependencies between tables: table "A" depends on table "B"
     /// if "B" is referenced in the definition of "A".
-    /// Loading dependencies were used to check whether a table can be removed before we had those referential dependencies.
-    /// Now we support this mode (see `check_table_referential_dependencies` in Setting.h) for compatibility.
-    void addDependencies(const StorageID & table_id, const std::vector<StorageID> & new_referential_dependencies, const std::vector<StorageID> & new_loading_dependencies, const std::vector<StorageID> & new_view_dependencies);
-    void addDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies, const TableNamesSet & new_view_dependencies);
-    void addDependencies(const TablesDependencyGraph & new_referential_dependencies, const TablesDependencyGraph & new_loading_dependencies, const TablesDependencyGraph & new_view_dependencies);
-    std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>> removeDependencies(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false, bool is_mv = false);
+    /// Hard dependencies are a subset of referential dependencies: only structural dependencies
+    /// (e.g. dictGet() in column defaults, dictionary sources, TTL expressions).
+    /// A table will fail to load without its hard dependencies, so they are checked by default
+    /// when trying to DROP or RENAME a table (see the `check_table_dependencies` setting).
+    void addDependencies(const StorageID & table_id, const std::vector<StorageID> & new_referential_dependencies, const std::vector<StorageID> & new_hard_dependencies, const std::vector<StorageID> & new_view_dependencies);
+    void addDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_hard_dependencies, const TableNamesSet & new_view_dependencies);
+    void addDependencies(const TablesDependencyGraph & new_referential_dependencies, const TablesDependencyGraph & new_hard_dependencies, const TablesDependencyGraph & new_view_dependencies);
+    std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>> removeDependencies(const StorageID & table_id, bool check_referential_dependencies, bool check_hard_dependencies, bool is_drop_database = false, bool is_mv = false);
     std::vector<StorageID> getReferentialDependencies(const StorageID & table_id) const;
     std::vector<StorageID> getReferentialDependents(const StorageID & table_id) const;
-    std::vector<StorageID> getLoadingDependencies(const StorageID & table_id) const;
-    std::vector<StorageID> getLoadingDependents(const StorageID & table_id) const;
-    void updateDependencies(const StorageID & table_id, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies, const TableNamesSet & new_view_dependencies);
+    std::vector<StorageID> getHardDependencies(const StorageID & table_id) const;
+    std::vector<StorageID> getHardDependents(const StorageID & table_id) const;
+    void updateDependencies(const StorageID & table_id, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_hard_dependencies, const TableNamesSet & new_view_dependencies);
 
-    void checkTableCanBeRemovedOrRenamed(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false) const;
+    void checkTableCanBeRemovedOrRenamed(const StorageID & table_id, bool check_referential_dependencies, bool check_hard_dependencies, bool is_drop_database = false) const;
 
-    void checkTableCanBeAddedWithNoCyclicDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies);
+    void checkTableCanBeAddedWithNoCyclicDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_hard_dependencies);
     void checkTableCanBeRenamedWithNoCyclicDependencies(const StorageID & from_table_id, const StorageID & to_table_id);
     void checkTablesCanBeExchangedWithNoCyclicDependencies(const StorageID & table_id_1, const StorageID & table_id_2);
 
@@ -273,7 +275,7 @@ private:
 
     void shutdownImpl(std::function<void()> shutdown_system_logs);
 
-    void checkTableCanBeRemovedOrRenamedUnlocked(const StorageID & removing_table, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database) const TSA_REQUIRES(databases_mutex);
+    void checkTableCanBeRemovedOrRenamedUnlocked(const StorageID & removing_table, bool check_referential_dependencies, bool check_hard_dependencies, bool is_drop_database) const TSA_REQUIRES(databases_mutex);
 
     struct UUIDToStorageMapPart
     {
@@ -315,8 +317,11 @@ private:
     /// if the table "B" is referenced in the definition of the table "A".
     TablesDependencyGraph referential_dependencies TSA_GUARDED_BY(databases_mutex);
 
-    /// Loading dependencies were used to check whether a table can be removed before we had referential dependencies.
-    TablesDependencyGraph loading_dependencies TSA_GUARDED_BY(databases_mutex);
+    /// Hard dependencies are a subset of referential dependencies: only structural dependencies
+    /// (e.g. dictGet() in column defaults, dictionary sources, TTL expressions).
+    /// A table will fail to load without its hard dependencies, so they are checked by default
+    /// when trying to DROP or RENAME a table (see the `check_table_dependencies` setting).
+    TablesDependencyGraph hard_dependencies TSA_GUARDED_BY(databases_mutex);
 
     /// View dependencies between a source table and its view.
     TablesDependencyGraph view_dependencies TSA_GUARDED_BY(databases_mutex);

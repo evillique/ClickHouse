@@ -257,8 +257,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             {
                 /// Server may fail to restart of DETACH PERMANENTLY if table has dependent ones
                 bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
-                bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
-                DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+                bool check_hard_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
+                DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_hard_deps, is_drop_or_detach_database);
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
                 database->detachTablePermanently(context_, table_id.table_name);
             }
@@ -304,8 +304,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             /// Check dependencies before shutting table down
             bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
-            bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
-            DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+            bool check_hard_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
+            DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_hard_deps, is_drop_or_detach_database);
 
             table->flushAndShutdown(true);
 
@@ -313,7 +313,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-            DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+            DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_hard_deps, is_drop_or_detach_database);
             database->dropTable(context_, table_id.table_name, query.sync);
 
             /// We have to clear mmapio cache when dropping table from Ordinary database

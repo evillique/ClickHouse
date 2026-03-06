@@ -1,4 +1,4 @@
-#include <Databases/DDLLoadingDependencyVisitor.h>
+#include <Databases/DDLHardDependencyVisitor.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include "config.h"
@@ -20,24 +20,24 @@
 namespace DB
 {
 
-using TableLoadingDependenciesVisitor = DDLLoadingDependencyVisitor::Visitor;
+using TableHardDependenciesVisitor = DDLHardDependencyVisitor::Visitor;
 
-TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, bool can_throw)
+TableNamesSet getHardDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, bool can_throw)
 {
     assert(global_context == global_context->getGlobalContext());
-    TableLoadingDependenciesVisitor::Data data;
+    TableHardDependenciesVisitor::Data data;
     data.default_database = global_context->getCurrentDatabase();
     data.create_query = ast;
     data.global_context = global_context;
     data.table_name = table;
     data.can_throw = can_throw;
-    TableLoadingDependenciesVisitor visitor{data};
+    TableHardDependenciesVisitor visitor{data};
     visitor.visit(ast);
     data.dependencies.erase(table);
     return data.dependencies;
 }
 
-void DDLLoadingDependencyVisitor::visit(const ASTPtr & ast, Data & data)
+void DDLHardDependencyVisitor::visit(const ASTPtr & ast, Data & data)
 {
     /// Looking for functions in column default expressions and dictionary source definition
     if (const auto * function = ast->as<ASTFunction>())
@@ -94,7 +94,7 @@ ssize_t DDLMatcherBase::getPositionOfTableNameArgumentToVisit(const ASTFunction 
     return -1;
 }
 
-void DDLLoadingDependencyVisitor::visit(const ASTFunction & function, Data & data)
+void DDLHardDependencyVisitor::visit(const ASTFunction & function, Data & data)
 {
     ssize_t table_name_arg_idx = getPositionOfTableNameArgumentToVisit(function);
     if (table_name_arg_idx < 0)
@@ -102,7 +102,7 @@ void DDLLoadingDependencyVisitor::visit(const ASTFunction & function, Data & dat
     extractTableNameFromArgument(function, data, table_name_arg_idx);
 }
 
-void DDLLoadingDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments & dict_source, Data & data)
+void DDLHardDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments & dict_source, Data & data)
 {
     if (dict_source.name != "clickhouse")
         return;
@@ -131,7 +131,7 @@ void DDLLoadingDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments &
     }
 }
 
-void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
+void DDLHardDependencyVisitor::visit(const ASTStorage & storage, Data & data)
 {
     if (storage.ttl_table)
     {
@@ -159,7 +159,7 @@ void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
 }
 
 
-void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction & function, Data & data, size_t arg_idx)
+void DDLHardDependencyVisitor::extractTableNameFromArgument(const ASTFunction & function, Data & data, size_t arg_idx)
 {
     /// Just ignore incorrect arguments, proper exception will be thrown later
     if (!function.arguments || function.arguments->children.size() <= arg_idx)

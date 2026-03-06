@@ -13,10 +13,13 @@ class ASTStorage;
 
 using TableNamesSet = std::unordered_set<QualifiedTableName>;
 
-/// Returns a list of all tables which should be loaded before a specified table.
-/// For example, a local ClickHouse table should be loaded before a dictionary which uses that table as its source.
+/// Returns a list of "hard" dependencies of a table, i.e. tables without which a dependent table will fail to load.
+/// For example, a dictionary depends on its source table; a table with dictGet() in column defaults depends on that dictionary.
+/// Hard dependencies are a subset of referential dependencies (which include everything mentioned in the CREATE query).
+/// Because a table cannot function without its hard dependencies, they are checked by default
+/// when trying to DROP or RENAME a table (see the `check_table_dependencies` setting).
 /// Does not validate AST, works a best-effort way.
-TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, bool can_throw = false);
+TableNamesSet getHardDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, bool can_throw = false);
 
 
 class DDLMatcherBase
@@ -27,9 +30,11 @@ public:
     static ssize_t getPositionOfTableNameArgumentToEvaluate(const ASTFunction & function);
 };
 
-/// Visits ASTCreateQuery and extracts the names of all tables which should be loaded before a specified table.
-/// TODO: Combine this class with DDLDependencyVisitor (because loading dependencies are a subset of referential dependencies).
-class DDLLoadingDependencyVisitor : public DDLMatcherBase
+/// Visits ASTCreateQuery and extracts the names of all tables which are "hard" dependencies of a specified table.
+/// Hard dependencies are a subset of referential dependencies: only structural dependencies like
+/// dictGet() in column defaults, dictionary sources, TTL expressions, and specific engine arguments.
+/// A table will fail to load if any of its hard dependencies is missing.
+class DDLHardDependencyVisitor : public DDLMatcherBase
 {
 public:
     struct Data
@@ -42,7 +47,7 @@ public:
         bool can_throw;
     };
 
-    using Visitor = ConstInDepthNodeVisitor<DDLLoadingDependencyVisitor, true>;
+    using Visitor = ConstInDepthNodeVisitor<DDLHardDependencyVisitor, true>;
 
     static void visit(const ASTPtr & ast, Data & data);
 

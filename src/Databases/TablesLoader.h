@@ -72,10 +72,10 @@ private:
     Strings databases_to_load;
     ParsedTablesMetadata metadata;
     TablesDependencyGraph referential_dependencies;
-    TablesDependencyGraph loading_dependencies;
+    TablesDependencyGraph hard_dependencies;
     TablesDependencyGraph mv_to_dependencies;
     TablesDependencyGraph mv_from_dependencies;
-    TablesDependencyGraph all_loading_dependencies;
+    TablesDependencyGraph all_referential_dependencies;
     LoggerPtr log;
     std::atomic<size_t> tables_processed{0};
     AtomicStopwatch stopwatch;
