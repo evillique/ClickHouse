@@ -28,6 +28,7 @@ TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases database
     , mv_to_dependencies("MaterializedViewToDeps")
     , mv_from_dependencies("MaterializedViewFromDeps")
     , all_loading_dependencies("LoadingDeps")
+    , all_startup_dependencies("StartupDeps")
     , async_loader(global_context->getAsyncLoader())
 {
     metadata.default_database = global_context->getCurrentDatabase();
@@ -108,24 +109,6 @@ LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
 {
     LoadTaskPtrs result;
     std::unordered_map<String, LoadTaskPtrs> startup_database; /// database name -> all its tables startup tasks
-    TablesDependencyGraph all_startup_dependencies("AllStartupMvDependencies");
-    all_startup_dependencies = all_loading_dependencies;
-
-    /// CREATE MATERIALIZED VIEW mv TO tgt AS SELECT ... FROM src
-    /// introduces two dependencies:  mv depends on tgt (mv_to_dependencies), src depends on mv (mv_from_dependencies)
-    /// src table must be started up when mv is ready, otherwise we lose data inserted in src
-    for (const auto & table_id : mv_to_dependencies.getTables())
-    {
-        auto storage_id_vector = mv_to_dependencies.getDependencies(table_id);
-        for (const auto & storage_id : storage_id_vector)
-            all_startup_dependencies.addDependency(storage_id, table_id);
-    }
-    for (const auto & table_id : mv_from_dependencies.getTables())
-    {
-        auto storage_id_vector = mv_from_dependencies.getDependencies(table_id);
-        for (const auto & storage_id : storage_id_vector)
-            all_startup_dependencies.addDependency(table_id, storage_id);
-    }
 
     for (const auto & table_id : all_startup_dependencies.getTablesSortedByDependency())
     {
@@ -186,10 +169,14 @@ void TablesLoader::buildDependencyGraph()
         /// We're adding `new_loading_dependencies` to the graph here even if they're empty because
         /// we need to have all tables from `metadata.parsed_tables` in the graph.
         all_loading_dependencies.addDependencies(table_name, new_loading_dependencies);
+
+        /// Startup dependencies are all referential dependencies.
+        all_startup_dependencies.addDependencies(table_name, new_ref_dependencies.dependencies);
     }
 
     referential_dependencies.log();
     all_loading_dependencies.log();
+    all_startup_dependencies.log();
     mv_from_dependencies.log();
     mv_to_dependencies.log();
 }
@@ -246,6 +233,19 @@ void TablesLoader::removeUnresolvableDependencies()
 
     /// Cannot load tables with cyclic dependencies.
     all_loading_dependencies.checkNoCyclicDependencies();
+
+    auto need_exclude_startup_dependency = [this](const StorageID & table_id)
+    {
+        if (metadata.parsed_tables.contains(table_id.getQualifiedName()))
+            return false;
+        if (DatabaseCatalog::instance().isTableExist(table_id, global_context))
+            return true; /// Table exists and is already loaded, exclude from startup graph.
+
+        return true; /// Table does not exist, exclude from startup graph.
+    };
+
+    all_startup_dependencies.removeTablesIf(need_exclude_startup_dependency); // NOLINT
+    all_startup_dependencies.checkNoCyclicDependencies();
 }
 
 }
